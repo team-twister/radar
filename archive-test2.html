@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archive Access Test 2</title>
+<style>
+:root{--bg:#05080c;--fg:#dce6ee;--muted:#8696a5;--ok:#4fd27a;--bad:#ff6b6b;--line:#253445;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px ui-sans-serif,system-ui,sans-serif;margin:0;padding:24px 16px;max-width:640px;margin-inline:auto}
+h1{font-size:1.2rem;margin:0 0 6px}
+p{color:var(--muted);margin:0 0 18px;line-height:1.45}
+.row{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.row b{display:block;margin-bottom:4px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.wait{color:var(--muted)}
+code{font-size:.8rem;color:var(--muted);word-break:break-all}
+</style>
+</head>
+<body>
+<h1>Radar archive access test 2</h1>
+<p>Asks the archive for exact byte ranges, the way browsers allow without a permission check. Screenshot once every line has finished.</p>
+<div id="out"></div>
+<script>
+const FILE='https://thredds.nci.org.au/thredds/fileServer/rq0/66/2025/vol/66_20251026.pvol.zip';
+const CAT='https://thredds.nci.org.au/thredds/catalog/rq0/66/2025/vol/catalog.xml';
+const out=document.getElementById('out');
+function row(name,url){const d=document.createElement('div');d.className='row';d.innerHTML=`<b>${name}</b><span class="wait">Testing…</span><br><code>${url}</code>`;out.appendChild(d);return d.querySelector('span')}
+async function grab(url,range){
+  const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),25000);
+  try{
+    const r=await fetch(url,{headers:{Range:range},signal:ctl.signal});
+    const buf=await r.arrayBuffer();clearTimeout(to);
+    return{status:r.status,bytes:buf.byteLength,buf,range:r.headers.get('Content-Range')};
+  }catch(e){clearTimeout(to);return{error:e.name==='AbortError'?'timed out':'blocked (CORS)'}}
+}
+function show(s,res,want){
+  if(res.error){s.className='bad';s.textContent='BLOCKED: '+res.error;return false}
+  const good=res.status===206&&res.bytes<=want*2;
+  s.className=good?'ok':'bad';
+  s.textContent=`${good?'WORKS':'Not quite'}: status ${res.status}, read ${res.bytes.toLocaleString()} bytes${res.range?', '+res.range:''}`;
+  return good;
+}
+(async()=>{
+  // A: first 1 KB of the day file
+  let s=row('A. First 1 KB of the day file',FILE);
+  const a=await grab(FILE,'bytes=0-1023');
+  const okA=show(s,a,1024);
+  if(okA){const sig=new Uint8Array(a.buf,0,4);if(sig[0]===0x50&&sig[1]===0x4b)s.textContent+=' (real zip file)'}
+  // B: last 64 KB, using the file size from the catalogue
+  s=row('B. Zip index at the end of the file',FILE);
+  let size=null;
+  try{
+    const xml=await (await fetch(CAT)).text();
+    const m=xml.match(/66_20251026\.pvol\.zip[\s\S]*?<dataSize[^>]*>([\d.]+)<\/dataSize>/)||xml.match(/66_20251026\.pvol\.zip[\s\S]*?dataSize[^>]*>([\d.]+)/);
+    if(m)size=Math.round(parseFloat(m[1])*(/Gbytes/.test(xml.slice(xml.indexOf('66_20251026'),xml.indexOf('66_20251026')+600))?1e9:/Mbytes/.test(xml.slice(xml.indexOf('66_20251026'),xml.indexOf('66_20251026')+600))?1e6:1));
+  }catch(e){}
+  if(!size)size=1528165051;
+  const b=await grab(FILE,`bytes=${size-65536}-${size-1}`);
+  const okB=show(s,b,65536);
+  if(okB){const u=new Uint8Array(b.buf);let found=false;for(let i=u.length-22;i>=0;i--){if(u[i]===0x50&&u[i+1]===0x4b&&u[i+2]===5&&u[i+3]===6){found=true;break}}s.textContent+=found?' (zip index found)':' (no zip index in this chunk)'}
+  // C: a 2 MB chunk from the middle, to check speed
+  s=row('C. 2 MB chunk from the middle (speed check)',FILE);
+  const t0=performance.now();
+  const c=await grab(FILE,`bytes=700000000-702097151`);
+  if(show(s,c,2097152))s.textContent+=` in ${((performance.now()-t0)/1000).toFixed(1)} s`;
+})();
+</script>
+</body>
+</html>
