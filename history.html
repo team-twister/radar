@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05080c">
+<title>Weather History 3D</title>
+<meta name="description" content="Rebuild any past Australian storm in 3D from the Bureau of Meteorology radar archive.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed 3D storm; slim header with Live link; storm picker sheet; dock at the bottom with views, data, time and settings */
+:root{
+  --bg:#05080c; --panel:rgba(12,18,26,.94); --line:#253445; --fg:#dce6ee; --muted:#8696a5; --accent:#4fd2e8; --live:#ff5a5a; --warn:#f2b84b; --cc:#c58cff;
+  --display:"Chakra Petch",ui-sans-serif,system-ui,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px var(--body);overflow:hidden}
+[hidden]{display:none!important}
+#scene{position:fixed;inset:0;touch-action:none;width:100%;height:100%;display:block}
+header{position:fixed;top:0;left:0;right:0;z-index:2;pointer-events:none;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:16px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+  background:linear-gradient(rgba(5,8,12,.95) 60%,transparent)}
+header > *{pointer-events:auto}
+.brand{min-width:0}
+h1{margin:0;font-family:var(--display);font-weight:700;font-size:1.12rem;letter-spacing:.04em;text-transform:uppercase}
+h1 span{color:var(--accent)}
+.meta{font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:3px;line-height:1.45}
+.meta b{color:var(--fg);font-weight:500}
+.meta .hot{color:var(--live)}
+.hbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.hbtn{font:600 .72rem var(--body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.hbtn.primary{border-color:var(--accent);color:var(--accent)}
+.status{position:fixed;z-index:3;left:50%;transform:translateX(-50%);top:calc(84px + env(safe-area-inset-top,0px));
+  font:500 .74rem var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 11px;max-width:calc(100% - 32px);text-align:center}
+.status.err{border-color:var(--warn);color:var(--warn)}
+/* storm picker */
+.sheet{position:fixed;z-index:4;inset:0;display:grid;place-items:center;background:rgba(3,5,8,.72);backdrop-filter:blur(6px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-bottom,0px));overflow-y:auto}
+.card{width:100%;max-width:460px;background:#0b121a;border:1px solid var(--line);border-radius:14px;padding:18px 16px;display:grid;gap:14px}
+.card h2{margin:0;font-family:var(--display);font-size:1.05rem;letter-spacing:.04em;text-transform:uppercase}
+.card h2 span{color:var(--accent)}
+.card p{margin:0;color:var(--muted);font-size:.8rem;line-height:1.5}
+.field{display:grid;gap:5px}
+.field label{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.64rem}
+.field select,.field input{font:500 .9rem var(--body);color:var(--fg);background:#05080c;border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.go{font:700 .82rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:#031015;background:var(--accent);border:0;border-radius:9px;padding:12px;cursor:pointer}
+.go:disabled{opacity:.4;cursor:default}
+.ghost{font:600 .75rem var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:9px;padding:10px;cursor:pointer}
+.info{font:500 .74rem var(--mono);color:var(--muted);line-height:1.5}
+.info.err{color:var(--warn)}
+.tag{display:inline-block;font:600 .62rem var(--mono);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:4px;color:var(--muted)}
+.tag.cc{color:var(--cc);border-color:#5b3d7a}
+/* dock */
+.dock{position:fixed;z-index:2;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));
+  bottom:calc(10px + env(safe-area-inset-bottom,0px));max-width:660px;margin:0 auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(10px)}
+.dock-head{display:flex;flex-wrap:wrap;gap:8px;padding:9px 12px;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;min-width:0}
+.seg.grow{flex:1}
+.seg button{flex:1;font:600 .72rem var(--body);color:var(--muted);background:transparent;border:0;padding:8px 6px;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:rgba(79,210,232,.14);color:var(--accent)}
+.seg button.vel[aria-pressed="true"]{background:rgba(255,90,90,.14);color:#ff8a8a}
+.seg button.ccb[aria-pressed="true"]{background:rgba(197,140,255,.14);color:var(--cc)}
+.seg button:disabled{opacity:.3;cursor:default}
+.seg button+button{border-left:1px solid var(--line)}
+.fold{font:600 .72rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
+.timebar{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:0 12px 6px}
+.timebar button{font:600 .72rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:7px;padding:6px 9px;cursor:pointer;min-width:34px}
+.timebar button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.loadbar{display:flex;gap:2px;padding:0 12px 10px;height:14px}
+.loadbar i{flex:1;border-radius:2px;background:#1a2430}
+.loadbar i.dl{background:#2c5560}.loadbar i.pr{background:#3f7f8c}.loadbar i.ok{background:var(--accent)}.loadbar i.bad{background:var(--warn)}
+.loadbar i.cur{outline:1.5px solid #fff;outline-offset:1px}
+.dock-body{display:grid;gap:10px;padding:0 12px 12px;max-height:32vh;overflow-y:auto}
+.row{display:grid;grid-template-columns:6.4rem 1fr 3.6rem;align-items:center;gap:8px;font-size:.75rem}
+.row label{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.62rem}
+.row output{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chips .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.62rem;margin-right:2px}
+.chip{font:500 .7rem var(--mono);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.chip i{width:10px;height:10px;border-radius:2px;display:block}
+.chip[aria-pressed="false"]{opacity:.45}
+.scale{display:flex;height:8px;border-radius:2px;overflow:hidden}
+.scale i{flex:1}
+.ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.58rem;color:var(--muted);margin-top:3px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.btns button{font:500 .7rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
+.btns button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:.62rem;color:var(--muted);line-height:1.45}
+/* which controls show where */
+[data-views],.opac,#greyRow,.shellchips{display:none}
+body[data-view="radar"] [data-views~="radar"],body[data-view="tilts"] [data-views~="tilts"],body[data-view="blocks"] [data-views~="blocks"],body[data-view="shells"] [data-views~="shells"]{display:grid}
+body[data-view="radar"] .chips[data-views~="radar"],body[data-view="radar"] .btns[data-views~="radar"]{display:flex}
+body[data-view="radar"].raised .row.lift{display:grid}
+body[data-view="shells"][data-data="z"] #zChips,body[data-view="shells"][data-data="v"] #vChips,body[data-view="shells"][data-data="c"] #cChips,
+body[data-view="radar"].raised[data-data="z"] #zChips,body[data-view="radar"].raised[data-data="v"] #vChips,body[data-view="radar"].raised[data-data="c"] #cChips{display:flex}
+body[data-view="shells"] #greyRow,body[data-view="radar"].raised #greyRow{display:flex}
+body[data-view="shells"] .opac,body[data-view="radar"].raised .opac{display:grid;gap:6px}
+.opac .row i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:-1px}
+.ticks[data-for]{display:none}
+body[data-data="z"] .ticks[data-for="z"],body[data-data="v"] .ticks[data-for="v"],body[data-data="c"] .ticks[data-for="c"]{display:flex}
+body.picking #scene{cursor:crosshair}
+</style>
+</head>
+<body data-view="radar" data-data="z">
+<canvas id="scene"></canvas>
+<header>
+  <div class="brand">
+    <h1>Weather <span>History</span></h1>
+    <div class="meta" id="meta">Pick a radar and a date to rebuild a storm.</div>
+  </div>
+  <div class="hbtns">
+    <button class="hbtn primary" id="openPicker">Change storm</button>
+    <a class="hbtn" href="index.html">Live radar</a>
+  </div>
+</header>
+<div class="status" id="status" hidden></div>
+
+<!-- storm picker -->
+<div class="sheet" id="picker">
+  <div class="card">
+    <h2>Find a <span>storm</span></h2>
+    <p>Rebuild any past storm in 3D straight from the Bureau of Meteorology radar archive. The archive runs about 2 days behind.</p>
+    <div class="field"><label for="site">Radar</label><select id="site"><option>Loading radar list…</option></select></div>
+    <div class="field"><label for="date">Date (your local time)</label><input id="date" type="date" value="2025-10-26"></div>
+    <button class="go" id="find">Find scans</button>
+    <div class="info" id="findInfo" aria-live="polite"></div>
+    <div id="pick2" hidden style="display:grid;gap:14px">
+      <div class="two">
+        <div class="field"><label for="from">From</label><select id="from"></select></div>
+        <div class="field"><label for="to">To</label><select id="to"></select></div>
+      </div>
+      <div class="two">
+        <div class="field"><label for="every">Every</label><select id="every"><option value="0">Every scan</option><option value="10" selected>10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hour</option></select></div>
+        <div class="field"><label for="area">Area</label><select id="area"><option value="wide">Whole radar · 240 km</option><option value="close">Close-up · 120 km</option></select></div>
+      </div>
+      <div class="info" id="sizeInfo"></div>
+      <button class="go" id="build">Build storm</button>
+    </div>
+    <button class="ghost" id="closePicker" hidden>Back to the storm</button>
+  </div>
+</div>
+
+<div class="dock">
+  <div class="dock-head">
+    <div class="seg grow" role="group" aria-label="View">
+      <button id="vRadar" aria-pressed="true">Radar</button>
+      <button id="vTilts" aria-pressed="false">Tilts</button>
+      <button id="vBlocks" aria-pressed="false">Blocks</button>
+      <button id="vShells" aria-pressed="false">Shells</button>
+    </div>
+    <div class="seg" role="group" aria-label="Data">
+      <button id="dZ" aria-pressed="true">dBZ</button>
+      <button id="dV" class="vel" aria-pressed="false">Vel</button>
+      <button id="dC" class="ccb" aria-pressed="false">CC</button>
+    </div>
+    <button class="fold" id="fold" aria-expanded="false">Controls</button>
+  </div>
+  <div class="timebar">
+    <button id="prev" aria-label="Previous scan">◀</button>
+    <input id="time" type="range" min="0" max="0" value="0" aria-label="Scan time">
+    <button id="next" aria-label="Next scan">▶</button>
+    <button id="play" aria-pressed="false">Play</button>
+  </div>
+  <div class="loadbar" id="loadbar" aria-hidden="true"></div>
+  <div class="dock-body" id="dockBody" hidden>
+    <div class="chips" data-views="radar"><span class="lbl">Overlay</span><button class="chip" id="raise" aria-pressed="false">Raise 3D storm</button></div>
+    <div class="chips shellchips" id="zChips"><span class="lbl">dBZ shells</span></div>
+    <div class="chips shellchips" id="vChips"><span class="lbl">Wind shells</span></div>
+    <div class="chips shellchips" id="cChips"><span class="lbl">Low-CC shells</span></div>
+    <div class="opac" id="opac"></div>
+    <div class="chips" id="greyRow"><span class="lbl">Look</span><button class="chip" id="grey" aria-pressed="false">Grey storm</button><button class="chip" id="opReset">Reset see-through</button></div>
+    <div class="row" data-views="tilts blocks"><label for="min" id="minLbl">Min dBZ</label><input id="min" type="range" min="10" max="70" value="25"><output id="minv">25</output></div>
+    <div class="row" data-views="tilts"><label for="spread">Spread tilts</label><input id="spread" type="range" min="0" max="6" step="0.5" value="0"><output id="spreadv">0</output></div>
+    <div class="row" data-views="radar"><label for="radarOp">Radar opacity</label><input id="radarOp" type="range" min="10" max="100" value="90"><output id="radarOpv">90%</output></div>
+    <div class="row lift" data-views="tilts blocks shells"><label for="lift">Lift off map</label><input id="lift" type="range" min="0" max="40" step="1" value="0"><output id="liftv">0 km</output></div>
+    <div class="row"><label for="exag">Height ×</label><input id="exag" type="range" min="1" max="5" step="0.5" value="2.5"><output id="exagv">2.5</output></div>
+    <div class="row" data-views="tilts blocks shells"><label for="cut">Cut away</label><input id="cut" type="range" min="-150" max="150" value="-150"><output id="cutv">off</output></div>
+    <div>
+      <div class="scale" id="scale"></div>
+      <div class="ticks" data-for="z"><span>15</span><span>25</span><span>35</span><span>45</span><span>55</span><span>65</span><span>75 dBZ</span></div>
+      <div class="ticks" data-for="v"><span>35 toward</span><span>15</span><span>0</span><span>15</span><span>35 m/s away</span></div>
+      <div class="ticks" data-for="c"><span>0.2</span><span>0.5</span><span>0.8</span><span>0.9</span><span>0.95</span><span>1.0 CC</span></div>
+    </div>
+    <div class="btns">
+      <button id="namesBtn" aria-pressed="true">Town names</button>
+      <button id="mapBtn" hidden>Dark map</button>
+      <button id="focusBtn" aria-pressed="false">Pick close-up centre</button>
+      <button id="spin" aria-pressed="false">Auto-rotate</button>
+      <button id="reset">Reset view</button>
+    </div>
+    <div class="note">Velocity is wind toward (green) or away from (red) the radar. CC (correlation coefficient) near 1 is plain rain; lower CC inside a strong storm usually means large hail, and a low-CC blob on top of a rotation couplet is the classic tornado debris signature. CC only exists on dual-pol radars. Heights are stretched ×2.5 by default.<br>Radar data: Bureau of Meteorology via the AURA archive (NCI, Monash University), non-commercial licence. Map imagery © Esri and its partners. Built by Team Twister.</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="archive.js"></script>
+<script>
+/* ================= colours ================= */
+const ZST=[[10,[120,130,140]],[15,[92,157,174]],[20,[39,169,67]],[25,[24,131,35]],[30,[35,115,8]],[33,[155,191,3]],[35,[244,243,0]],[40,[204,188,0]],[41,[238,138,1]],[49,[196,104,8]],[50,[249,35,11]],[58,[148,39,28]],[60,[200,133,169]],[65,[196,67,134]],[66,[154,36,224]],[72,[105,24,179]],[76,[230,230,255]]];
+const VST=[[-35,[200,255,200]],[-25,[0,255,60]],[-12,[0,150,40]],[-3,[60,90,65]],[0,[110,110,110]],[3,[95,60,60]],[12,[170,0,20]],[25,[255,30,60]],[35,[255,200,170]]];
+const CST=[[0.2,[20,20,60]],[0.45,[60,60,200]],[0.6,[0,160,255]],[0.75,[0,220,160]],[0.85,[160,255,0]],[0.9,[255,255,0]],[0.93,[255,176,0]],[0.96,[255,80,0]],[0.98,[200,0,30]],[1.0,[130,0,40]],[1.05,[255,220,240]]];
+function ramp(st,z){if(z<=st[0][0])return st[0][1];for(let i=1;i<st.length;i++){const[a,ca]=st[i-1],[b,cb]=st[i];if(z<=b){const t=(z-a)/(b-a);return ca.map((v,k)=>v+(cb[k]-v)*t)}}return st.at(-1)[1]}
+const RAMP={z:ZST,v:VST,c:CST};
+const DEC={z:q=>q-32,v:q=>q-64,c:q=>q/200};
+// 256-entry colour tables per field (index = stored byte)
+const LUTC={};for(const k of['z','v','c']){const t=new Uint8Array(256*4);for(let q=1;q<256;q++){const[r,g,b]=ramp(RAMP[k],DEC[k](q));t.set([r,g,b,255],q*4)}LUTC[k]=t}
+LUTC.z.fill(0,0,(10+32)*4);  // hide below 10 dBZ on the flat map
+
+const $=id=>document.getElementById(id);
+function status(msg,err){const s=$('status');if(!msg){s.hidden=true;return}s.hidden=false;s.textContent=msg;s.classList.toggle('err',!!err)}
+const st={view:'radar',data:'z',t:0,min:{z:{tilts:25,blocks:45},v:{tilts:15,blocks:20},c:{tilts:1.05,blocks:0.95}},spread:0,exag:2.5,lift:0,radarOp:90,sat:true,names:true,cut:-150,raise:false,grey:false,
+  op:{z:{20:13,40:28,50:50,60:95},v:{in15:22,in25:85,out15:22,out25:85},c:{cc90:35,cc80:95}},
+  on:{z:{20:true,40:true,50:true,60:true},v:{in15:true,in25:true,out15:true,out25:true},c:{cc90:true,cc80:true}}};
+const SHELLS={
+  z:[['20','20+ dBZ',0x3fb878,'z20'],['40','40+ dBZ',0xf2d20a,'z40'],['50','50+ dBZ',0xf2400f,'z50'],['60','60+ dBZ',0xd56ad6,'z60']],
+  v:[['in15','Toward 15+',0x1fbf55,'in15'],['in25','Toward 25+',0x6dff8a,'in25'],['out15','Away 15+',0xc8102e,'out15'],['out25','Away 25+',0xff4d6a,'out25']],
+  c:[['cc90','CC < 0.90',0xc58cff,'cc90'],['cc80','CC < 0.80',0x5a2cff,'cc80']]};
+const OP_DEFAULT=JSON.parse(JSON.stringify(st.op));
+
+/* ================= scene ================= */
+const canvas=$('scene');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.localClippingEnabled=true;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x05080c);scene.fog=new THREE.Fog(0x05080c,350,800);
+const camera=new THREE.PerspectiveCamera(45,1,0.1,4000);
+const controls=new THREE.OrbitControls(camera,canvas);controls.enableDamping=true;controls.maxPolarAngle=Math.PI*0.49;controls.minDistance=8;controls.maxDistance=650;controls.autoRotateSpeed=1;
+scene.add(new THREE.HemisphereLight(0xdbe9ff,0x20180c,0.8));
+const sun=new THREE.DirectionalLight(0xffffff,0.75);sun.position.set(-80,120,60);scene.add(sun);
+const clip=new THREE.Plane(new THREE.Vector3(1,0,0),150);
+const world=new THREE.Group();scene.add(world);
+const storm=new THREE.Group();world.add(storm);
+let ground=null,satMesh=null,labelMesh=null,darkGround=null,LABELS=[];
+function label(text,x,z,color){
+  const c=document.createElement('canvas'),ctx=c.getContext('2d'),fs=40,font=`600 ${fs}px IBM Plex Sans, system-ui, sans-serif`;ctx.font=font;
+  const w=Math.ceil(ctx.measureText(text).width)+24;c.width=w;c.height=fs+20;
+  ctx.font=font;ctx.fillStyle='rgba(5,8,12,.7)';ctx.fillRect(0,0,w,c.height);ctx.fillStyle=color;ctx.textBaseline='middle';ctx.fillText(text,12,c.height/2);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false,transparent:true,fog:false}));
+  sp.userData.aspect=w/c.height;sp.position.set(x,3.2,z);sp.renderOrder=10;LABELS.push(sp);return sp;
+}
+function disposeTree(o){o.traverse(n=>{if(n.geometry)n.geometry.dispose();if(n.material){[].concat(n.material).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}})}
+
+/* ground: satellite imagery + place names (Esri), range rings, radar marker. Built per radar. */
+let groundToken=0;
+function buildGround(site,R){
+  const token=++groundToken;
+  if(ground){world.remove(ground);disposeTree(ground)}
+  LABELS=[];satMesh=labelMesh=null;
+  ground=new THREE.Group();world.add(ground);
+  darkGround=new THREE.Mesh(new THREE.CircleGeometry(R,96),new THREE.MeshBasicMaterial({color:0x0d1620,fog:false}));
+  darkGround.rotation.x=-Math.PI/2;darkGround.position.y=-0.05;ground.add(darkGround);
+  for(const r of [25,50,75,100,125,150]){if(r>R)break;const p=[];for(let a=0;a<=160;a++){const t=a/160*Math.PI*2;p.push(new THREE.Vector3(Math.sin(t)*r,0.3,-Math.cos(t)*r))}
+    ground.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p),new THREE.LineBasicMaterial({color:0x4fd2e8,transparent:true,opacity:.3,fog:false})))}
+  const radar=new THREE.Mesh(new THREE.ConeGeometry(0.9,2.4,4),new THREE.MeshBasicMaterial({color:0xff5a5a}));radar.position.set(0,1.2,0);ground.add(radar);
+  ground.add(label(`${site.name} radar`,0,0,'#ff8a8a'));
+  const lat0=site.lat,lon0=site.lon,KX=111.32*Math.cos(lat0*Math.PI/180),KY=110.57;
+  const Z=R>95?9:10,n=2**Z;
+  const tileOf=(lon,lat)=>{const r=lat*Math.PI/180;return[(lon+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]};
+  const lonlatOf=(tx,ty)=>[tx/n*360-180,Math.atan(Math.sinh(Math.PI*(1-2*ty/n)))*180/Math.PI];
+  const[ax,ay]=tileOf(lon0-R/KX,lat0+R/KY),[bx,by]=tileOf(lon0+R/KX,lat0-R/KY);
+  const tx0=Math.floor(ax),ty0=Math.floor(ay),nx=Math.floor(bx)-tx0+1,ny=Math.floor(by)-ty0+1;
+  const mosaic=async(service,fill)=>{const cv=document.createElement('canvas');cv.width=nx*256;cv.height=ny*256;const ctx=cv.getContext('2d');
+    if(fill){ctx.fillStyle=fill;ctx.fillRect(0,0,cv.width,cv.height)}let ok=0;const jobs=[];
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++)jobs.push(new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';
+      im.onload=()=>{ctx.drawImage(im,i*256,j*256);ok++;res()};im.onerror=()=>res();
+      im.src=`https://server.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/${Z}/${ty0+j}/${tx0+i}`}));
+    await Promise.all(jobs);return ok?cv:null};
+  const surface=(cv,y,transparent)=>{const tex=new THREE.CanvasTexture(cv);tex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    const seg=48,geo=new THREE.PlaneGeometry(1,1,seg,seg),pos=geo.attributes.position,uv=geo.attributes.uv;
+    for(let k=0;k<pos.count;k++){const u=uv.getX(k),v=uv.getY(k);const[lon,lat]=lonlatOf(tx0+u*nx,ty0+(1-v)*ny);pos.setXYZ(k,(lon-lon0)*KX,y,-(lat-lat0)*KY)}
+    pos.needsUpdate=true;geo.computeBoundingSphere();
+    return new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,fog:false,transparent,depthWrite:!transparent}))};
+  (async()=>{
+    const img=await mosaic('World_Imagery','#0d1620');if(token!==groundToken)return;
+    if(img){const ctx=img.getContext('2d');ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(0,0,img.width,img.height);satMesh=surface(img,0,false);ground.add(satMesh);$('mapBtn').hidden=false}
+    const lab=await mosaic('Reference/World_Boundaries_and_Places',null);if(token!==groundToken)return;
+    if(lab){labelMesh=surface(lab,0.25,true);labelMesh.renderOrder=3;ground.add(labelMesh)}
+    applyMap();
+  })();
+  applyMap();
+}
+function applyMap(){if(satMesh)satMesh.visible=st.sat;if(darkGround)darkGround.visible=!(satMesh&&st.sat);if(labelMesh)labelMesh.visible=st.names;
+  for(const sp of LABELS)sp.visible=true;$('mapBtn').textContent=st.sat?'Dark map':'Satellite map'}
+
+/* flat radar (lowest tilt) drawn from its native polar data */
+const topPlane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({transparent:true,opacity:0.9,depthWrite:false,fog:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));
+topPlane.rotation.x=-Math.PI/2;topPlane.position.y=0.15;topPlane.renderOrder=2;world.add(topPlane);
+let topTex=null,topKey='';
+function polarTexture(frame,key){
+  const P=frame.out.polar,f=P[key];if(!f)return null;
+  const W=1024,R=TOPR,data=new Uint8Array(W*W*4),lut=LUTC[key];
+  if(!frame.rayLut){const az=P.az,l=new Int32Array(3600).fill(-1),best=new Float32Array(3600).fill(99);
+    for(let i=0;i<az.length;i++){const c=Math.round(az[i]*10);for(let d=-12;d<=12;d++){const b=((c+d)%3600+3600)%3600,dist=Math.abs(d)/10;if(dist<best[b]){best[b]=dist;l[b]=i}}}
+    for(let b=0;b<3600;b++)if(best[b]>1)l[b]=-1;frame.rayLut=l}
+  const zq=key!=='z'&&P.z&&P.z.nbins===f.nbins?P.z.q:null;
+  const L=frame.rayLut,nb=f.nbins,q=f.q,rs=P.rs/1000,r0=P.r0/1000,cosel=Math.cos(P.el*Math.PI/180);
+  for(let r=0;r<W;r++){const y=-R+(r+0.5)*2*R/W;for(let c=0;c<W;c++){const x=-R+(c+0.5)*2*R/W,s=Math.hypot(x,y);if(s>=R)continue;
+    let a=Math.atan2(x,y)*1800/Math.PI;if(a<0)a+=3600;const ray=L[Math.round(a)%3600];if(ray<0)continue;
+    const b=Math.floor((s/cosel-r0)/rs);if(b<0||b>=nb)continue;const v=q[ray*nb+b];if(!v)continue;if(zq&&zq[ray*nb+b]<42)continue;const o=(r*W+c)*4,lo=v*4;
+    data[o]=lut[lo];data[o+1]=lut[lo+1];data[o+2]=lut[lo+2];data[o+3]=lut[lo+3]}}
+  const t=new THREE.DataTexture(data,W,W,THREE.RGBAFormat);t.needsUpdate=true;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearFilter;return t;
+}
+
+/* ================= worker + loading ================= */
+let worker=null,jobId=0;const pendingJobs=new Map();
+function getWorker(){if(worker)return worker;worker=new Worker('worker.js');
+  worker.onmessage=e=>{const p=pendingJobs.get(e.data.id);if(!p)return;pendingJobs.delete(e.data.id);e.data.ok?p.res(e.data):p.rej(new Error(e.data.error))};
+  worker.onerror=e=>{for(const p of pendingJobs.values())p.rej(new Error('The processing worker crashed: '+(e.message||'unknown')));pendingJobs.clear();worker=null};
+  return worker}
+function processScan(bytes,method,opt){const id=++jobId;return new Promise((res,rej)=>{pendingJobs.set(id,{res,rej});getWorker().postMessage({id,buf:bytes.buffer,method,opt},[bytes.buffer])})}
+
+let SITES=[],session=null,frames=[],TOPR=150;
+const fmtTime=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const fmtDate=t=>new Date(t).toLocaleDateString([],{day:'numeric',month:'short',year:'numeric'});
+
+async function loadSites(){
+  try{SITES=await Archive.sites()}catch(e){$('site').innerHTML='<option>Couldn\'t load the radar list</option>';$('findInfo').textContent=e.message;$('findInfo').className='info err';return}
+  const sel=$('site');sel.innerHTML='';const groups={};
+  for(const s of SITES){const g=s.state||'Other';(groups[g]=groups[g]||[]).push(s)}
+  for(const[g,list]of Object.entries(groups)){const og=document.createElement('optgroup');og.label=g;
+    for(const s of list){const o=document.createElement('option');o.value=s.id;const dp=s.epochs.some(e=>e.dp);o.textContent=`${s.name}${dp?' · CC':''}${s.current?'':' (closed)'}`;og.appendChild(o)}sel.appendChild(og)}
+  let saved=null;try{saved=localStorage.getItem('hist-site')}catch(e){}
+  sel.value=saved&&SITES.some(s=>String(s.id)===saved)?saved:(SITES.some(s=>s.id===66)?'66':String(SITES[0].id));
+}
+$('site').onchange=()=>{try{localStorage.setItem('hist-site',$('site').value)}catch(e){}$('pick2').hidden=true;$('findInfo').textContent=''};
+$('date').onchange=()=>{$('pick2').hidden=true;$('findInfo').textContent=''};
+(function maxDate(){const d=new Date(Date.now()-2*864e5);$('date').max=d.toISOString().slice(0,10)})();
+
+let dayCache=null;
+$('find').onclick=async()=>{
+  const site=SITES.find(s=>String(s.id)===$('site').value),dv=$('date').value;if(!site||!dv)return;
+  const info=$('findInfo');info.className='info';info.textContent='Reading the archive index…';$('find').disabled=true;$('pick2').hidden=true;
+  try{
+    // the archive stores whole UTC days; a local day can span two of them
+    const[y,m,d]=dv.split('-').map(Number),start=new Date(y,m-1,d).getTime(),end=start+864e5;
+    const days=[...new Set([start,end-1].map(t=>new Date(t).toISOString().slice(0,10).replace(/-/g,'')))];
+    const entries=[],opened=[];
+    for(const dd of days){try{const day=await Archive.openDay(site.id,dd);opened.push(day);for(const e of day.entries)if(e.time>=start&&e.time<end)entries.push({...e,day})}catch(e){if(e.message!=='not-found')throw e}}
+    if(!entries.length){info.className='info err';info.textContent=opened.length?'No scans from this radar on that day.':'The archive has nothing for this radar on that day. It might be too recent (about 2 days behind), or the radar wasn\'t running.';return}
+    dayCache={site,date:dv,entries};
+    const fill=(sel,def)=>{sel.innerHTML='';entries.forEach((e,i)=>{const o=document.createElement('option');o.value=i;o.textContent=fmtTime(e.time);sel.appendChild(o)});sel.value=def};
+    let a=0,b=entries.length-1;
+    if(site.id===66&&dv==='2025-10-26'){a=entries.findIndex(e=>fmtTime(e.time).startsWith('3:30'));b=entries.findIndex(e=>fmtTime(e.time).startsWith('5:05'));if(a<0)a=0;if(b<0)b=entries.length-1}
+    else{a=Math.max(0,Math.floor(entries.length/2)-6);b=Math.min(entries.length-1,a+12)}
+    fill($('from'),a);fill($('to'),b);
+    const ep=Archive.epochOn(site,new Date(start));
+    info.textContent=`${entries.length} scans found, ${fmtTime(entries[0].time)} to ${fmtTime(entries.at(-1).time)}. ${ep.dp?'Dual-pol radar: CC available.':'Older radar: no CC.'}${ep.doppler?'':' No Doppler velocity.'}`;
+    $('pick2').hidden=false;$('pick2').style.display='grid';updateSize();
+  }catch(e){info.className='info err';info.textContent=e.message==='not-found'?'Nothing in the archive for that day.':`Couldn't read the archive: ${e.message}`}
+  finally{$('find').disabled=false}
+};
+function chosen(){
+  if(!dayCache)return[];const E=dayCache.entries,a=+$('from').value,b=+$('to').value,ev=+$('every').value*60e3;
+  const lo=Math.min(a,b),hi=Math.max(a,b),out=[];let last=-Infinity;
+  for(let i=lo;i<=hi;i++){if(!ev||E[i].time-last>=ev-60e3){out.push(E[i]);last=E[i].time}}
+  return out;
+}
+function updateSize(){const c=chosen(),mb=c.reduce((n,e)=>n+e.csize,0)/1e6;
+  $('sizeInfo').className='info'+(c.length>24?' err':'');
+  $('sizeInfo').textContent=c.length>24?`${c.length} scans is too many to hold on a phone. Pick 24 or fewer (widen "Every" or shorten the time).`:`${c.length} scan${c.length===1?'':'s'} · about ${Math.round(mb)} MB to download`;
+  $('build').disabled=!c.length||c.length>24}
+for(const id of['from','to','every','area'])$(id).onchange=updateSize;
+$('build').onclick=()=>{const list=chosen();if(!list.length||list.length>24)return;startSession(dayCache.site,list);$('picker').hidden=true;$('closePicker').hidden=false};
+$('openPicker').onclick=()=>{$('picker').hidden=false};$('closePicker').onclick=()=>{$('picker').hidden=true};
+
+function gridOpt(){return $('area').value==='close'?{half:60,dx:0.5,cx:session?session.focus.x:0,cy:session?session.focus.y:0}:{half:120,dx:1,cx:0,cy:0}}
+async function startSession(site,list,keepFocus){
+  if(session)session.abort.abort();
+  const focus=keepFocus&&session?session.focus:{x:0,y:0};
+  session={site,list,abort:new AbortController(),focus};
+  session.opt=gridOpt();
+  frames=list.map(e=>({entry:e,state:'wait',out:null}));
+  const ep=Archive.epochOn(site,new Date(list[0].time));session.dp=ep.dp;session.doppler=ep.doppler;
+  $('dC').disabled=!ep.dp;$('dV').disabled=!ep.doppler;if((st.data==='c'&&!ep.dp)||(st.data==='v'&&!ep.doppler))setData('z',true);
+  $('time').max=frames.length-1;st.t=0;$('time').value=0;
+  TOPR=150;
+  buildGround(site,Math.max(TOPR,session.opt.half+Math.hypot(focus.x,focus.y))+10);
+  clearStorm();topPlane.visible=false;drawLoadbar();meta();home();
+  const sess=session;
+  let chain=Promise.resolve();
+  for(let i=0;i<frames.length;i++){
+    if(sess!==session)return;
+    const fr=frames[i];fr.state='dl';drawLoadbar();
+    let scan;
+    try{scan=await Archive.getScan(fr.entry.day,fr.entry,p=>{if(i===st.t||!frames.some(f=>f.state==='ok'))status(`Downloading ${fmtTime(fr.entry.time)} · ${Math.round(p*100)}%`)},sess.abort.signal)}
+    catch(e){if(sess.abort.signal.aborted)return;fr.state='bad';fr.err=e.message;drawLoadbar();continue}
+    fr.state='pr';drawLoadbar();
+    chain=chain.then(async()=>{
+      if(sess!==session)return;
+      if(i===st.t||!frames.some(f=>f.state==='ok'))status(`Building ${fmtTime(fr.entry.time)} in 3D…`);
+      try{const r=await processScan(scan.bytes,scan.method,sess.opt);if(sess!==session)return;fr.out=r.out;fr.meta=r.meta;fr.state='ok';
+        if(i===st.t||frames.filter(f=>f.state==='ok').length===1){if(frames.filter(f=>f.state==='ok').length===1){st.t=i;$('time').value=i;render();home();return}render()}}
+      catch(e){fr.state='bad';fr.err=e.message;if(i===st.t)status(`Couldn't build ${fmtTime(fr.entry.time)}: ${e.message}`,true)}
+      drawLoadbar();
+      if(frames.every(f=>f.state==='ok'||f.state==='bad'))status(null);
+    });
+    await new Promise(r=>setTimeout(r,0));
+    if(frames.filter(f=>f.state==='pr').length>2)await chain;   // don't pile up too many waiting scans
+  }
+}
+function drawLoadbar(){const lb=$('loadbar');lb.innerHTML='';frames.forEach((f,i)=>{const s=document.createElement('i');s.className=({dl:'dl',pr:'pr',ok:'ok',bad:'bad'})[f.state]||'';if(i===st.t)s.classList.add('cur');s.title=fmtTime(f.entry.time);lb.appendChild(s)})}
+function meta(){
+  if(!session){$('meta').textContent='Pick a radar and a date to rebuild a storm.';return}
+  const f=frames[st.t],lab={z:'Reflectivity',v:'Velocity',c:'Correlation coefficient'}[st.data];
+  const peak=f&&f.out?` · peak <span class="hot">${Math.round(f.out.maxz)} dBZ</span>`:'';
+  $('meta').innerHTML=`<b>${f?fmtTime(f.entry.time):''}</b> ${f?fmtDate(f.entry.time):''} · ${session.site.name} · ${lab}${peak}`;
+}
+
+/* ================= drawing ================= */
+const tmp=new THREE.Object3D(),cc=new THREE.Color();
+function clearStorm(){for(const o of storm.children.slice()){storm.remove(o);if(o.isInstancedMesh)o.geometry.dispose();[].concat(o.material).forEach(m=>m.dispose())}}
+const colorOf=d=>ramp(RAMP[st.data],d);
+function passes(d){const m=st.min[st.data][st.view];return st.data==='z'?d>=m:st.data==='v'?Math.abs(d)>=m:d<=m}
+function buildBlocks(o){
+  const G=o.grid,vol=o.vol[st.data],dec=DEC[st.data],list=[];
+  for(let k=0;k<G.nz;k++)for(let j=0;j<G.ny;j++)for(let i=0;i<G.nx;i++){const q=vol[(k*G.ny+j)*G.nx+i];if(!q)continue;const d=dec(q);if(passes(d))list.push(i,j,k,d)}
+  const n=list.length/4,m=new THREE.InstancedMesh(new THREE.BoxGeometry(G.dx,G.dz,G.dx),new THREE.MeshLambertMaterial({clippingPlanes:[clip]}),Math.max(1,n));
+  for(let p=0;p<n;p++){const i=list[p*4],j=list[p*4+1],k=list[p*4+2],d=list[p*4+3];
+    tmp.position.set(G.x0+(i+0.5)*G.dx,(k+0.5)*G.dz,-(G.y0+(j+0.5)*G.dx));tmp.updateMatrix();m.setMatrixAt(p,tmp.matrix);
+    const[r,g,b]=colorOf(d);m.setColorAt(p,cc.setRGB(r/255,g/255,b/255).convertSRGBToLinear())}
+  m.count=n;storm.add(m);
+}
+function buildTilts(o){
+  const G=o.grid,S=G.dx<0.9?2:1,dec=DEC[st.data];
+  o.tilts.forEach((tl,idx)=>{
+    const g=tl[st.data],h=tl.h,list=[];
+    for(let j=0;j<G.ny;j+=S)for(let i=0;i<G.nx;i+=S){const q=g[j*G.nx+i];if(!q||!h[j*G.nx+i])continue;const d=dec(q);if(st.data!=='z'&&tl.z[j*G.nx+i]<42)continue;if(passes(d))list.push(i,j,h[j*G.nx+i]/10,d)}
+    const n=list.length/4;if(!n)return;
+    const m=new THREE.InstancedMesh(new THREE.BoxGeometry(G.dx*S,0.12,G.dx*S),new THREE.MeshLambertMaterial({clippingPlanes:[clip]}),n);
+    for(let p=0;p<n;p++){const i=list[p*4],j=list[p*4+1],hh=list[p*4+2],d=list[p*4+3];
+      tmp.position.set(G.x0+(i+S/2)*G.dx,hh+idx*st.spread/st.exag,-(G.y0+(j+S/2)*G.dx));tmp.updateMatrix();m.setMatrixAt(p,tmp.matrix);
+      const[r,g2,b]=colorOf(d);m.setColorAt(p,cc.setRGB(r/255,g2/255,b/255).convertSRGBToLinear())}
+    storm.add(m);
+  });
+}
+function meshGeo(fr,key){fr.geo=fr.geo||{};if(fr.geo[key]!==undefined)return fr.geo[key];const m=fr.out.meshes[key];
+  if(!m||!m.idx.length)return fr.geo[key]=null;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(m.pos,3));g.setIndex(new THREE.BufferAttribute(m.idx,1));g.computeVertexNormals();return fr.geo[key]=g}
+function buildShells(fr){
+  SHELLS[st.data].forEach(([k,,col,key],n)=>{
+    if(!st.on[st.data][k])return;const pct=st.op[st.data][k];if(pct<=0)return;const geo=meshGeo(fr,key);if(!geo)return;
+    const o=pct/100,solid=o>=0.99;
+    const m=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({color:st.grey?0xc4cad1:col,transparent:!solid,opacity:solid?1:o,side:THREE.DoubleSide,depthWrite:o>=0.8,shininess:st.grey?12:30,clippingPlanes:[clip]}));
+    m.renderOrder=10-n;storm.add(m)});
+}
+function stormCentre(fr){
+  if(fr.centre)return fr.centre;const o=fr.out,G=o.grid,v=o.vol.z,N2=G.nx*G.ny;let sx=0,sy=0,w=0;
+  for(let k=0;k<N2;k++){let m=0;for(let z=0;z<G.nz;z+=2){const q=v[z*N2+k];if(q>m)m=q}const d=m-32;if(d>=40){const ww=(d-39)*(d-39);sx+=ww*(G.x0+(k%G.nx+0.5)*G.dx);sy+=ww*(G.y0+(Math.floor(k/G.nx)+0.5)*G.dx);w+=ww}}
+  return fr.centre=w?{x:sx/w,y:sy/w}:{x:G.x0+G.nx*G.dx/2,y:G.y0+G.ny*G.dx/2};
+}
+function freeOldGeometry(keep){frames.forEach((f,i)=>{if(Math.abs(i-keep)>2&&f.geo){for(const g of Object.values(f.geo))g&&g.dispose();f.geo=null}})}
+function render(){
+  meta();drawLoadbar();$('time').value=st.t;
+  const fr=frames[st.t];
+  if(!fr){clearStorm();return}
+  if(fr.state!=='ok'){if(fr.state==='bad')status(`Couldn't load ${fmtTime(fr.entry.time)}: ${fr.err}`,true);else status(`Still loading ${fmtTime(fr.entry.time)}…`);return}
+  if(frames.every(f=>f.state==='ok'||f.state==='bad'))status(null);else if(!$('status').classList.contains('err'))status(null);
+  clearStorm();freeOldGeometry(st.t);
+  const radar=st.view==='radar';
+  TOPR=Math.min(150,(fr.out.polar.r0+fr.out.polar.rs*(fr.out.polar.z?fr.out.polar.z.nbins:0))/1000||150);
+  topPlane.visible=radar;
+  if(radar){const key=`${st.t}|${st.data}`;if(key!==topKey){if(topTex)topTex.dispose();topTex=polarTexture(fr,st.data)||polarTexture(fr,'z');topKey=key}
+    topPlane.material.map=topTex;topPlane.material.opacity=st.radarOp/100;topPlane.material.needsUpdate=true;topPlane.scale.set(TOPR*2,TOPR*2,1);
+    if(st.raise)buildShells(fr)}
+  else if(st.view==='blocks')buildBlocks(fr.out);else if(st.view==='tilts')buildTilts(fr.out);else buildShells(fr);
+  storm.scale.y=st.exag;storm.position.y=st.lift;
+}
+
+/* ================= controls ================= */
+function drawScale(){const sc=$('scale');sc.innerHTML='';const R=RAMP[st.data];
+  const[a,b,s]=st.data==='z'?[15,76,1]:st.data==='v'?[-35,35,1]:[0.2,1.05,0.0125];
+  for(let v=a;v<=b;v+=s){const i=document.createElement('i');i.style.background=`rgb(${ramp(R,v).map(Math.round)})`;sc.appendChild(i)}}
+function syncMin(){const m=st.min[st.data][st.view];if(m===undefined)return;const el=$('min');
+  if(st.data==='z'){el.min=10;el.max=70;el.step=1;$('minLbl').textContent='Min dBZ'}
+  else if(st.data==='v'){el.min=5;el.max=40;el.step=1;$('minLbl').textContent='Min speed'}
+  else{el.min=0.5;el.max=1.05;el.step=0.01;$('minLbl').textContent='Max CC'}
+  el.value=m;$('minv').textContent=st.data==='c'?(+m).toFixed(2):m}
+function drawChips(){
+  for(const d of['z','v','c']){const box=$({z:'zChips',v:'vChips',c:'cChips'}[d]);box.querySelectorAll('.chip').forEach(c=>c.remove());
+    for(const[k,name,col]of SHELLS[d]){const b=document.createElement('button');b.className='chip';b.setAttribute('aria-pressed',st.on[d][k]);
+      b.innerHTML=`<i style="background:#${col.toString(16).padStart(6,'0')}"></i>${name}`;b.onclick=()=>{st.on[d][k]=!st.on[d][k];b.setAttribute('aria-pressed',st.on[d][k]);render()};box.appendChild(b)}}}
+function drawOpac(){const box=$('opac');box.innerHTML='';
+  for(const[k,name,c]of SHELLS[st.data]){const id='op_'+st.data+'_'+k,v=st.op[st.data][k];
+    const r=document.createElement('div');r.className='row';
+    r.innerHTML=`<label for="${id}"><i style="background:${st.grey?'#c4cad1':'#'+c.toString(16).padStart(6,'0')}"></i>${name}</label><input id="${id}" type="range" min="0" max="100" step="1" value="${v}"><output>${v===0?'off':v>=100?'solid':v+'%'}</output>`;
+    const inp=r.querySelector('input'),out=r.querySelector('output');
+    inp.oninput=()=>{const n=+inp.value;st.op[st.data][k]=n;out.textContent=n===0?'off':n>=100?'solid':n+'%';later(render)};
+    box.appendChild(r)}}
+function setView(v){const was=st.view;st.view=v;document.body.dataset.view=v;
+  [['radar','vRadar'],['tilts','vTilts'],['blocks','vBlocks'],['shells','vShells']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===v));
+  syncMin();render();if((v==='radar')!==(was==='radar'))home()}
+function setData(d,quiet){st.data=d;document.body.dataset.data=d;[['z','dZ'],['v','dV'],['c','dC']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===d));
+  topKey='';drawScale();drawOpac();syncMin();if(!quiet)render()}
+$('vRadar').onclick=()=>setView('radar');$('vTilts').onclick=()=>setView('tilts');$('vBlocks').onclick=()=>setView('blocks');$('vShells').onclick=()=>setView('shells');
+$('dZ').onclick=()=>setData('z');$('dV').onclick=()=>setData('v');$('dC').onclick=()=>setData('c');
+let deb=null;const later=f=>{clearTimeout(deb);deb=setTimeout(f,90)};
+$('time').oninput=()=>{st.t=+$('time').value;meta();drawLoadbar();later(render)};
+$('prev').onclick=()=>{if(st.t>0){st.t--;render()}};$('next').onclick=()=>{if(st.t<frames.length-1){st.t++;render()}};
+$('min').oninput=()=>{st.min[st.data][st.view]=+$('min').value;$('minv').textContent=st.data==='c'?(+$('min').value).toFixed(2):$('min').value;later(render)};
+$('spread').oninput=()=>{st.spread=+$('spread').value;$('spreadv').textContent=st.spread;later(render)};
+$('radarOp').oninput=()=>{st.radarOp=+$('radarOp').value;$('radarOpv').textContent=st.radarOp+'%';topPlane.material.opacity=st.radarOp/100};
+$('lift').oninput=()=>{st.lift=+$('lift').value;$('liftv').textContent=st.lift+' km';storm.position.y=st.lift};
+$('exag').oninput=()=>{st.exag=+$('exag').value;$('exagv').textContent=st.exag;storm.scale.y=st.exag;if(st.view==='tilts')later(render)};
+$('cut').oninput=()=>{st.cut=+$('cut').value;clip.constant=-st.cut;$('cutv').textContent=st.cut<=-150?'off':(st.cut<0?`${-st.cut} km W`:`${st.cut} km E`)};
+$('grey').onclick=()=>{st.grey=!st.grey;$('grey').setAttribute('aria-pressed',st.grey);drawOpac();render()};
+$('opReset').onclick=()=>{st.op=JSON.parse(JSON.stringify(OP_DEFAULT));drawOpac();render()};
+$('raise').onclick=()=>{st.raise=!st.raise;document.body.classList.toggle('raised',st.raise);$('raise').setAttribute('aria-pressed',st.raise);render();
+  home()};
+$('namesBtn').onclick=()=>{st.names=!st.names;$('namesBtn').setAttribute('aria-pressed',st.names);applyMap()};
+$('mapBtn').onclick=()=>{st.sat=!st.sat;applyMap()};
+$('fold').onclick=()=>{const open=$('fold').getAttribute('aria-expanded')!=='true';$('fold').setAttribute('aria-expanded',open);$('fold').textContent=open?'Hide':'Controls';$('dockBody').hidden=!open};
+let playing=false;
+$('play').onclick=async()=>{playing=!playing;$('play').setAttribute('aria-pressed',playing);$('play').textContent=playing?'Pause':'Play';
+  while(playing){const ready=frames.map((f,i)=>f.state==='ok'?i:-1).filter(i=>i>=0);if(!ready.length){await new Promise(r=>setTimeout(r,500));continue}
+    const nx=ready.find(i=>i>st.t)??ready[0];st.t=nx;render();await new Promise(r=>setTimeout(r,700))}};
+$('spin').onclick=()=>{controls.autoRotate=!controls.autoRotate;$('spin').setAttribute('aria-pressed',controls.autoRotate)};
+/* close-up centre: tap the map */
+$('focusBtn').onclick=()=>{const on=!document.body.classList.contains('picking');document.body.classList.toggle('picking',on);$('focusBtn').setAttribute('aria-pressed',on);
+  if(on){if(st.view!=='radar')setView('radar');status('Tap the map where you want the close-up centred.')}else status(null)};
+const ray=new THREE.Raycaster(),ndc=new THREE.Vector2(),groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);let downAt=null;
+canvas.addEventListener('pointerdown',e=>{downAt=[e.clientX,e.clientY]});
+canvas.addEventListener('pointerup',e=>{
+  if(!document.body.classList.contains('picking')||!downAt||Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>8||!session)return;
+  ndc.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ndc,camera);const p=new THREE.Vector3();if(!ray.ray.intersectPlane(groundPlane,p))return;
+  document.body.classList.remove('picking');$('focusBtn').setAttribute('aria-pressed',false);
+  const dist=Math.hypot(p.x,-p.z);if(dist>150){status('Pick a spot within 150 km of the radar.',true);return}
+  session.focus={x:Math.round(p.x),y:Math.round(-p.z)};$('area').value='close';
+  status(`Rebuilding a 120 km close-up around that spot…`);startSession(session.site,session.list,true);
+});
+function home(){const narrow=innerWidth<600;
+  if(st.view==='radar'&&!st.raise){const fov=camera.fov*Math.PI/360,R=(session&&$('area').value==='close')?70:TOPR*0.75,h=Math.max(R/Math.tan(fov),R/(Math.tan(fov)*camera.aspect));
+    const c=session&&$('area').value==='close'?session.focus:{x:0,y:0};controls.target.set(c.x,0,-c.y);camera.position.set(c.x,h,-c.y+0.01);controls.update();return}
+  const fr=frames[st.t],c=fr&&fr.out?stormCentre(fr):(session?(session.opt.half<100?session.focus:{x:0,y:0}):{x:0,y:0}),s=session?Math.max(0.6,session.opt.half/120):1;
+  controls.target.set(c.x,8,-c.y);camera.position.set(c.x+45*s,(narrow?150:95)*s,-c.y+(narrow?170:115)*s);controls.update()}
+$('reset').onclick=home;
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();drawScale();drawChips();drawOpac();syncMin();home();loadSites();
+(function loop(){requestAnimationFrame(loop);controls.update();
+  for(const sp of LABELS){const d=camera.position.distanceTo(sp.position),h=Math.max(2.2,d*0.022);sp.scale.set(h*sp.userData.aspect,h,1)}
+  renderer.render(scene,camera)})();
+</script>
+</body>
+</html>
