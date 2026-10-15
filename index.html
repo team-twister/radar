@@ -118,6 +118,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <div class="ticks"><span>15</span><span>25</span><span>35</span><span>45</span><span>55</span><span>65 dBZ</span></div>
     </div>
     <div class="btns">
+      <button id="smooth" aria-pressed="true">Smooth storms</button>
       <button id="spin" aria-pressed="false">Auto-rotate</button>
       <button id="reset">Reset view</button>
       <button id="aus">All of Australia</button>
@@ -133,7 +134,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 /* ================= settings ================= */
 const HALF=20037508.342789244, WORLD=HALF*2, R_EARTH=6378137;
 const RANGE_KM=256;
-const DEFAULTS={mode:'3d',gap:1,min:14,float:6,count:12,dark:false,site:'Brisbane (Mt Stapylton)'};
+const DEFAULTS={mode:'3d',gap:1,min:14,float:6,count:12,dark:false,smooth:true,site:'Brisbane (Mt Stapylton)'};
 const VX=4;                   // vertical exaggeration so layers read at map scale
 const GAP_UNIT=2500*VX;       // metres of height per "layer gap" step
 const MAX_H=14000*VX;         // tallest block in 3D stack / latest mode (metres)
@@ -238,7 +239,7 @@ const map=new maplibregl.Map({
   pitch:0,maxPitch:75,attributionControl:{compact:true}
 });
 
-let siteMarkers=[],activeSite=null,frames=[],frameOn=[],cellsByFrame=[],grid=null,busy=false,lastKey='',spinning=false,currentSource='bom';
+let rawByFrame=[],cleanByFrame=[],siteMarkers=[],activeSite=null,frames=[],frameOn=[],cellsByFrame=[],grid=null,busy=false,lastKey='',spinning=false,currentSource='bom';
 
 map.on('load',()=>{
   map.addSource('ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
@@ -312,6 +313,28 @@ function cellsFrom(img,src,g){
   }
   return cells;
 }
+/* tidy a frame: drop speckle, fill pin-holes, smooth noise, so storms read as solid shapes */
+function cleanCells(cells,g){
+  const {nx,ny}=g,N=nx*ny;let v=new Float32Array(N).fill(NaN);
+  for(const[x,y,d]of cells)v[y*nx+x]=d;
+  const at=(a,x,y)=>(x<0||y<0||x>=nx||y>=ny)?NaN:a[y*nx+x];
+  for(let pass=0;pass<2;pass++){           // speckle out, holes in
+    const nv=v.slice();
+    for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){
+      let n=0,sum=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;const q=at(v,x+dx,y+dy);if(q===q){n++;sum+=q}}
+      const k=y*nx+x;
+      if(v[k]===v[k]){if(n<3)nv[k]=NaN}else if(n>=6)nv[k]=sum/n;
+    }
+    v=nv;
+  }
+  const out=[],W=[1,2,1,2,4,2,1,2,1];       // gentle 3x3 blur over rain cells only
+  for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){
+    if(v[y*nx+x]!==v[y*nx+x])continue;
+    let s=0,w=0,i=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++,i++){const q=at(v,x+dx,y+dy);if(q===q){s+=q*W[i];w+=W[i]}}
+    out.push([x,y,Math.round(s/w)]);
+  }
+  return out;
+}
 function makeGrid(src,s){
   const span=WORLD/2**src.z,res=span/256,B=4;
   const mx=lon2x(s[3]),my=lat2y(s[2]),Rm=RANGE_KM*1000/Math.cos(s[2]*Math.PI/180);
@@ -359,7 +382,7 @@ async function update(force){
       }
       out.push({time:list[i].time,cells:img?cellsFrom(img,src,g):[]});
     }
-    grid=g;frames=out;cellsByFrame=out.map(f=>f.cells);
+    grid=g;frames=out;rawByFrame=out.map(f=>f.cells);cleanByFrame=out.map(f=>cleanCells(f.cells,g));cellsByFrame=st.smooth?cleanByFrame:rawByFrame;
     if(frameOn.length!==frames.length)frameOn=frames.map(()=>true);
     lastKey=key;renderChips();redraw();stamp();
     const total=out.reduce((a,f)=>a+f.cells.length,0);
@@ -387,10 +410,11 @@ function redraw(){
         const thick=gapM>0?Math.max(800*VX,gapM*0.4):800*VX;
         b=lvl;h=lvl+thick;
       }else{                               // 3D stack / latest: height = intensity, stacked on what is below
-        const hh=300*VX+Math.max(0,d-10)/60*(st.mode==='now'?MAX_H:MAX_H*0.45);
+        const dq=st.smooth?Math.floor(d/5)*5+2.5:d;   // 5 dBZ terraces read like storm cores
+        const hh=300*VX+Math.max(0,dq-10)/60*(st.mode==='now'?MAX_H:MAX_H*0.45);
         b=Math.max(lvl,top[k]);h=b+hh;top[k]=h;
       }
-      feats.push({type:'Feature',properties:{c:hex(d),b,h},geometry:{type:'Polygon',coordinates:cellPoly(g,gx,gy)}});
+      feats.push({type:'Feature',properties:{c:hex(st.smooth?Math.floor(d/5)*5+2.5:d),b,h},geometry:{type:'Polygon',coordinates:cellPoly(g,gx,gy)}});
     }
     layer++;
   }
@@ -436,6 +460,8 @@ function applyStyle(){
 $('styleBtn').onclick=()=>{st.dark=!st.dark;store.set('dark',st.dark);applyStyle()};
 $('fold').onclick=()=>{const open=$('fold').getAttribute('aria-expanded')!=='true';$('fold').setAttribute('aria-expanded',open);$('fold').textContent=open?'Hide':'Controls';$('dockBody').hidden=!open};
 $('reset').onclick=()=>home();
+$('smooth').setAttribute('aria-pressed',st.smooth);
+$('smooth').onclick=()=>{st.smooth=!st.smooth;store.set('smooth',st.smooth);$('smooth').setAttribute('aria-pressed',st.smooth);cellsByFrame=st.smooth?cleanByFrame:rawByFrame;redraw()};
 $('aus').onclick=()=>{showSites(true);if($('fold').getAttribute('aria-expanded')==='true')$('fold').click();map.fitBounds([[112,-44.5],[154.5,-9.5]],{padding:20,pitch:0,bearing:0,duration:1200})};
 $('refresh').onclick=()=>{if(currentSource==='rv')currentSource='bom';update(true)};
 $('spin').onclick=()=>{spinning=!spinning;$('spin').setAttribute('aria-pressed',spinning);if(spinning)spin()};
