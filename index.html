@@ -7,8 +7,6 @@
 <meta name="theme-color" content="#06090d">
 <title>Live Radar Stack</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: full-screen map; slim header top; tool buttons top-right; collapsible control dock at the bottom */
 :root{
@@ -83,19 +81,60 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .keyrow{display:flex;gap:12px;font-size:.62rem;color:var(--muted);align-items:center}
 .keyrow i{display:inline-block;width:8px;height:8px;transform:rotate(45deg);border:2px solid #e8eef3;margin-right:5px}
 .keyrow i.d{border-color:var(--accent)}
+/* ---- RadarScope look ---- */
+:root{--ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",system-ui,sans-serif;
+  --bg:#000;--panel:rgba(22,22,24,.96);--line:#38383a;--fg:#fff;--muted:#8e8e93;--accent:#5ac8fa;--warn:#ffd60a;--live:#ff453a;--fill:#2c2c2e;
+  --display:var(--ui);--body:var(--ui);--mono:var(--ui)}
+body{font:15px/1.3 var(--ui);-webkit-font-smoothing:antialiased}
+header{background:#161618;border-bottom:1px solid var(--line);padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;align-items:center}
+h1{font:600 1.22rem var(--ui);letter-spacing:-.01em;text-transform:none;gap:7px}
+h1 .code{color:var(--accent);font-weight:700}
+h1 #hName{color:#fff;overflow:hidden;text-overflow:ellipsis}
+.meta{font:500 .82rem var(--ui);letter-spacing:0;color:var(--muted)}
+.meta b{color:var(--muted);font-weight:500}
+.tbtn{font:600 .8rem var(--ui);background:var(--fill);border:0;color:var(--accent);border-radius:9px;backdrop-filter:none;-webkit-backdrop-filter:none;text-decoration:none}
+.tbtn[aria-pressed="true"]{background:var(--accent);color:#000}
+.tools{flex-wrap:nowrap}
+.brand{flex:1;min-width:0;overflow:hidden}
+h1{min-width:0;overflow:hidden}
+h1 #hName{min-width:0;white-space:nowrap}
+.meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tools{flex:none}
+.tbtn.hist{border:0;background:var(--fill);color:var(--accent)}
+.status{border:0;border-radius:10px;font:500 .8rem var(--ui);top:calc(68px + env(safe-area-inset-top,0px));box-shadow:0 4px 18px rgba(0,0,0,.5)}
+.status.err{color:var(--warn)}
+.dock{left:0;right:0;bottom:0;max-width:none;border:0;border-top:1px solid var(--line);border-radius:0;padding-bottom:env(safe-area-inset-bottom,0px);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.dock-head,.dock-body{max-width:700px;margin:0 auto;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.seg{background:var(--fill);border:0;border-radius:9px;padding:2px;gap:2px}
+.seg button{font:600 .76rem var(--ui);color:#fff;border-radius:7px;padding:7px 4px}
+.seg button[aria-pressed="true"]{background:#636366;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.seg button+button{border-left:0}
+.fold{font:600 .76rem var(--ui);background:var(--fill);border:0;color:var(--accent);border-radius:9px}
+.frame{font:500 .72rem var(--ui);background:var(--fill);border:0;border-radius:7px;padding:5px 8px}
+.frame[aria-pressed="true"]{background:#636366;border:0}
+.frame.newest[aria-pressed="true"]{background:#8a2a2a}
+.row label{text-transform:none;letter-spacing:0;font-size:.76rem;font-weight:500}
+.row output{font:500 .8rem var(--ui)}
+.row select{font:500 .8rem var(--ui);background:var(--fill);border:0;border-radius:8px;padding:6px}
+.scale{height:9px;border-radius:1px}
+.ticks{font:500 .62rem var(--ui)}
+.btns button{font:500 .76rem var(--ui);background:var(--fill);border:0;border-radius:8px;padding:7px 11px}
+.btns button[aria-pressed="true"]{background:var(--accent);color:#000}
+.credit,.keyrow{font-size:.7rem}
+.site span{font:600 11px var(--ui)}
 </style>
 </head>
 <body>
 <div id="map"></div>
 <header>
   <div class="brand">
-    <h1><i class="dot" aria-hidden="true"></i>Live <span>Radar Stack</span></h1>
+    <h1><i class="dot" aria-hidden="true"></i><span class="code">LIVE</span> <span id="hName">Radar Stack</span></h1>
     <div class="meta" id="meta">Loading…</div>
   </div>
   <div class="tools">
     <a class="tbtn hist" href="history.html">History</a>
-    <button class="tbtn" id="sitesBtn" aria-pressed="false">Radar sites</button>
-    <button class="tbtn" id="styleBtn">Dark map</button>
+    <button class="tbtn" id="sitesBtn" aria-pressed="false">Sites</button>
+    <button class="tbtn" id="styleBtn">Dark</button>
   </div>
 </header>
 <div class="status" id="status" hidden></div>
@@ -441,7 +480,8 @@ function renderChips(){
 function stamp(){
   if(!frames.length)return;
   const t=frames.at(-1).time,ago=Math.max(0,Math.round((Date.now()/1000-t)/60));
-  $('meta').innerHTML=`<b>${activeSite[0]}</b> · ${SOURCES[currentSource].name} · newest ${new Date(t*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})} (${ago} min ago)`;
+  $('hName').textContent=activeSite[0];
+  $('meta').innerHTML=`${SOURCES[currentSource].name} reflectivity · newest ${new Date(t*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})} (${ago} min ago)`;
 }
 
 /* ================= controls ================= */
@@ -457,7 +497,7 @@ $('sitesBtn').onclick=()=>showSites($('sitesBtn').getAttribute('aria-pressed')!=
 function applyStyle(){
   map.setLayoutProperty('sat','visibility',st.dark?'none':'visible');
   map.setLayoutProperty('dark','visibility',st.dark?'visible':'none');
-  $('styleBtn').textContent=st.dark?'Satellite':'Dark map';
+  $('styleBtn').textContent=st.dark?'Satellite':'Dark';
 }
 $('styleBtn').onclick=()=>{st.dark=!st.dark;store.set('dark',st.dark);applyStyle()};
 $('fold').onclick=()=>{const open=$('fold').getAttribute('aria-expanded')!=='true';$('fold').setAttribute('aria-expanded',open);$('fold').textContent=open?'Hide':'Controls';$('dockBody').hidden=!open};

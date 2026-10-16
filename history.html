@@ -3,125 +3,127 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#05080c">
+<meta name="theme-color" content="#161618">
 <title>Weather History 3D</title>
 <meta name="description" content="Rebuild any past Australian storm in 3D from the Bureau of Meteorology radar archive.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: full-bleed 3D storm; slim header with Live link; storm picker sheet; dock at the bottom with views, data, time and settings */
+/* Layout: RadarScope-style. Solid site bar on top; full-bleed 3D view; bottom panel = product bar + colour strip + toolbar + time; settings fold out below. */
 :root{
-  --bg:#05080c; --panel:rgba(12,18,26,.94); --line:#253445; --fg:#dce6ee; --muted:#8696a5; --accent:#4fd2e8; --live:#ff5a5a; --warn:#f2b84b; --cc:#c58cff;
-  --display:"Chakra Petch",ui-sans-serif,system-ui,sans-serif;
-  --body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --bg:#000; --bar:#161618; --panel:rgba(22,22,24,.96); --fill:#2c2c2e; --fill2:#3a3a3c; --line:#38383a;
+  --fg:#fff; --muted:#8e8e93; --accent:#5ac8fa; --live:#ff453a; --warn:#ffd60a; --cc:#bf5af2; --vel:#ff6961;
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--fg);font:14px var(--body);overflow:hidden}
+body{background:var(--bg);color:var(--fg);font:15px/1.3 var(--ui);overflow:hidden;-webkit-font-smoothing:antialiased}
 [hidden]{display:none!important}
 #scene{position:fixed;inset:0;touch-action:none;width:100%;height:100%;display:block}
-header{position:fixed;top:0;left:0;right:0;z-index:2;pointer-events:none;
-  padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:16px;
-  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
-  display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
-  background:linear-gradient(rgba(5,8,12,.95) 60%,transparent)}
-header > *{pointer-events:auto}
-.brand{min-width:0}
-h1{margin:0;font-family:var(--display);font-weight:700;font-size:1.12rem;letter-spacing:.04em;text-transform:uppercase}
-h1 span{color:var(--accent)}
-.meta{font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:3px;line-height:1.45}
-.meta b{color:var(--fg);font-weight:500}
-.meta .hot{color:var(--live)}
-.hbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.hbtn{font:600 .72rem var(--body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;text-decoration:none;white-space:nowrap}
-.hbtn.primary{border-color:var(--accent);color:var(--accent)}
-.status{position:fixed;z-index:3;left:50%;transform:translateX(-50%);top:calc(84px + env(safe-area-inset-top,0px));
-  font:500 .74rem var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 11px;max-width:calc(100% - 32px);text-align:center}
-.status.err{border-color:var(--warn);color:var(--warn)}
-/* storm picker */
-.sheet{position:fixed;z-index:4;inset:0;display:grid;place-items:center;background:rgba(3,5,8,.72);backdrop-filter:blur(6px);
+button,select,input{font-family:var(--ui)}
+/* top bar */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:2;background:var(--bar);border-bottom:1px solid var(--line);
+  padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;
+  padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
+.site{min-width:0}
+.siteline{font-size:1.22rem;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.siteline .code{color:var(--accent);font-weight:700}
+.sub{color:var(--muted);font-size:.86rem;font-weight:500;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub .hot{color:var(--live)}
+.hbtns{display:flex;gap:6px;flex:none}
+.pill{font:600 .8rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:9px;padding:8px 12px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.status{position:fixed;z-index:3;left:50%;transform:translateX(-50%);top:calc(70px + env(safe-area-inset-top,0px));
+  font:500 .78rem var(--ui);background:var(--panel);border-radius:10px;padding:8px 12px;max-width:calc(100% - 32px);text-align:center;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+.status.err{color:var(--warn)}
+/* sheets (storm picker, volume warning) */
+.sheet{position:fixed;z-index:4;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-bottom,0px));overflow-y:auto}
-.card{width:100%;max-width:460px;background:#0b121a;border:1px solid var(--line);border-radius:14px;padding:18px 16px;display:grid;gap:14px}
-.card h2{margin:0;font-family:var(--display);font-size:1.05rem;letter-spacing:.04em;text-transform:uppercase}
+.card{width:100%;max-width:440px;background:#1c1c1e;border-radius:16px;padding:18px 16px;display:grid;gap:14px}
+.card h2{margin:0;font-size:1.25rem;font-weight:700}
 .card h2 span{color:var(--accent)}
-.card p{margin:0;color:var(--muted);font-size:.8rem;line-height:1.5}
+.card p{margin:0;color:var(--muted);font-size:.86rem;line-height:1.45}
 .field{display:grid;gap:5px}
-.field label{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.64rem}
-.field select,.field input{font:500 .9rem var(--body);color:var(--fg);background:#05080c;border:1px solid var(--line);border-radius:8px;padding:10px;width:100%;min-width:0}
+.field label{color:var(--muted);font-size:.74rem;font-weight:500}
+.field select,.field input{font:500 1rem var(--ui);color:var(--fg);background:var(--fill);border:0;border-radius:10px;padding:11px 10px;width:100%;min-width:0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.go{font:700 .82rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:#031015;background:var(--accent);border:0;border-radius:9px;padding:12px;cursor:pointer}
-.go:disabled{opacity:.4;cursor:default}
-.ghost{font:600 .75rem var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:9px;padding:10px;cursor:pointer}
-.info{font:500 .74rem var(--mono);color:var(--muted);line-height:1.5}
+.go{font:600 1rem var(--ui);color:#000;background:var(--accent);border:0;border-radius:12px;padding:13px;cursor:pointer}
+.go:disabled{opacity:.35;cursor:default}
+.ghost{font:600 .92rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:12px;padding:12px;cursor:pointer}
+.info{font:500 .82rem var(--ui);color:var(--muted);line-height:1.45}
 .info.err{color:var(--warn)}
-.tag{display:inline-block;font:600 .62rem var(--mono);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:4px;color:var(--muted)}
-.tag.cc{color:var(--cc);border-color:#5b3d7a}
-/* dock */
-.dock{position:fixed;z-index:2;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));
-  bottom:calc(10px + env(safe-area-inset-bottom,0px));max-width:660px;margin:0 auto;
-  background:var(--panel);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(10px)}
-.dock-head{display:flex;flex-wrap:wrap;gap:8px;padding:9px 12px;align-items:center}
-.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;min-width:0}
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* bottom panel */
+.dock{position:fixed;z-index:2;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.dock-in{max-width:700px;margin:0 auto;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.product{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;padding:9px 2px 6px}
+.pname{color:var(--accent);font-size:1.18rem;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.psub{color:var(--muted);font-size:.82rem;font-weight:500;white-space:nowrap}
+.ptime{text-align:right;flex:none}
+.pclock{color:var(--accent);font-size:1.18rem;font-weight:600;font-variant-numeric:tabular-nums}
+.strip .scale{display:flex;height:9px;overflow:hidden;border-radius:1px}
+.strip .scale i{flex:1}
+.ticks{display:none;justify-content:space-between;font:500 .62rem var(--ui);color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+body[data-data="z"] .ticks[data-for="z"],body[data-data="v"] .ticks[data-for="v"],body[data-data="c"] .ticks[data-for="c"]{display:flex}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0 6px;align-items:center}
+.seg{display:flex;background:var(--fill);border-radius:9px;padding:2px;min-width:0;gap:2px}
 .seg.grow{flex:1}
-.seg button{flex:1;font:600 .72rem var(--body);color:var(--muted);background:transparent;border:0;padding:8px 6px;cursor:pointer;white-space:nowrap}
-.seg button[aria-pressed="true"]{background:rgba(79,210,232,.14);color:var(--accent)}
-.seg button.vel[aria-pressed="true"]{background:rgba(255,90,90,.14);color:#ff8a8a}
-.seg button.ccb[aria-pressed="true"]{background:rgba(197,140,255,.14);color:var(--cc)}
+.seg.views{flex:1 1 100%}
+.seg.data{flex:1}
+.seg button{flex:1;font:600 .74rem var(--ui);color:var(--fg);background:transparent;border:0;border-radius:7px;padding:7px 6px;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:#636366;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.seg button.vel[aria-pressed="true"]{background:#8a2a2a}
+.seg button.ccb[aria-pressed="true"]{background:#5b2d82}
 .seg button:disabled{opacity:.3;cursor:default}
-.seg button+button{border-left:1px solid var(--line)}
-.fold{font:600 .72rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
-.timebar{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:0 12px 6px}
-.timebar button{font:600 .72rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:7px;padding:6px 9px;cursor:pointer;min-width:34px}
-.timebar button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
-.loadbar{display:flex;gap:2px;padding:0 12px 10px;height:14px}
-.loadbar i{flex:1;border-radius:2px;background:#1a2430}
-.loadbar i.dl{background:#2c5560}.loadbar i.pr{background:#3f7f8c}.loadbar i.ok{background:var(--accent)}.loadbar i.bad{background:var(--warn)}
+.fold{font:600 .74rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:9px;padding:8px 11px;cursor:pointer}
+.timebar{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:0 0 4px}
+.timebar button{font:600 .78rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:8px;padding:6px 10px;cursor:pointer;min-width:36px}
+.timebar button[aria-pressed="true"]{background:var(--accent);color:#000}
+.loadbar{display:flex;gap:2px;padding:2px 0 9px;height:15px}
+.loadbar i{flex:1;border-radius:2px;background:#2c2c2e}
+.loadbar i.dl{background:#24485a}.loadbar i.pr{background:#2f6f88}.loadbar i.ok{background:var(--accent)}.loadbar i.bad{background:var(--warn)}
 .loadbar i.cur{outline:1.5px solid #fff;outline-offset:1px}
-.dock-body{display:grid;gap:10px;padding:0 12px 12px;max-height:32vh;overflow-y:auto}
-.row{display:grid;grid-template-columns:6.4rem 1fr 3.6rem;align-items:center;gap:8px;font-size:.75rem}
-.row label{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.62rem}
-.row output{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.dock-body{display:grid;gap:11px;padding:2px 0 12px;max-height:33vh;overflow-y:auto;border-top:1px solid var(--line);padding-top:10px}
+.row{display:grid;grid-template-columns:6.6rem 1fr 3.8rem;align-items:center;gap:8px;font-size:.8rem}
+.row label{color:var(--muted);font-size:.74rem;font-weight:500}
+.row output{font:500 .78rem var(--ui);text-align:right;font-variant-numeric:tabular-nums}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.chips .lbl{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.62rem;margin-right:2px}
-.chip{font:500 .7rem var(--mono);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;display:flex;gap:6px;align-items:center}
-.chip i{width:10px;height:10px;border-radius:2px;display:block}
+.chips .lbl{color:var(--muted);font-size:.74rem;font-weight:500;margin-right:2px}
+.chip{font:500 .76rem var(--ui);color:var(--fg);background:var(--fill);border:0;border-radius:8px;padding:6px 9px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.chip i{width:10px;height:10px;border-radius:3px;display:block}
 .chip[aria-pressed="false"]{opacity:.45}
-.scale{display:flex;height:8px;border-radius:2px;overflow:hidden}
-.scale i{flex:1}
-.ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.58rem;color:var(--muted);margin-top:3px}
+.chip[aria-pressed="true"].sel{background:var(--accent);color:#000}
 .btns{display:flex;gap:6px;flex-wrap:wrap}
-.btns button{font:500 .7rem var(--body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
-.btns button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.btns button{font:500 .76rem var(--ui);color:var(--fg);background:var(--fill);border:0;border-radius:8px;padding:7px 11px;cursor:pointer}
+.btns button[aria-pressed="true"]{background:var(--accent);color:#000}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.note{font-size:.62rem;color:var(--muted);line-height:1.45}
+.note{font-size:.7rem;color:var(--muted);line-height:1.45}
+.note.warnnote{color:var(--warn)}
 /* which controls show where */
 [data-views],.opac,#greyRow,.shellchips{display:none}
-body[data-view="radar"] [data-views~="radar"],body[data-view="tilts"] [data-views~="tilts"],body[data-view="blocks"] [data-views~="blocks"],body[data-view="shells"] [data-views~="shells"]{display:grid}
-body[data-view="radar"] .chips[data-views~="radar"],body[data-view="radar"] .btns[data-views~="radar"]{display:flex}
+body[data-view="radar"] [data-views~="radar"],body[data-view="tilts"] [data-views~="tilts"],body[data-view="blocks"] [data-views~="blocks"],body[data-view="shells"] [data-views~="shells"],body[data-view="volume"] [data-views~="volume"]{display:grid}
+body[data-view="radar"] .chips[data-views~="radar"],body[data-view="volume"] .chips[data-views~="volume"]{display:flex}
 body[data-view="radar"].raised .row.lift{display:grid}
 body[data-view="shells"][data-data="z"] #zChips,body[data-view="shells"][data-data="v"] #vChips,body[data-view="shells"][data-data="c"] #cChips,
-body[data-view="radar"].raised[data-data="z"] #zChips,body[data-view="radar"].raised[data-data="v"] #vChips,body[data-view="radar"].raised[data-data="c"] #cChips{display:flex}
-body[data-view="shells"] #greyRow,body[data-view="radar"].raised #greyRow{display:flex}
-body[data-view="shells"] .opac,body[data-view="radar"].raised .opac{display:grid;gap:6px}
-.opac .row i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:-1px}
-.ticks[data-for]{display:none}
-body[data-data="z"] .ticks[data-for="z"],body[data-data="v"] .ticks[data-for="v"],body[data-data="c"] .ticks[data-for="c"]{display:flex}
+body.withshells[data-data="z"] #zChips,body.withshells[data-data="v"] #vChips,body.withshells[data-data="c"] #cChips{display:flex}
+body[data-view="shells"] #greyRow,body.withshells #greyRow{display:flex}
+body[data-view="shells"] .opac,body.withshells .opac{display:grid;gap:8px}
+.opac .row i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px}
 body.picking #scene{cursor:crosshair}
 </style>
 </head>
 <body data-view="radar" data-data="z">
 <canvas id="scene"></canvas>
-<header>
-  <div class="brand">
-    <h1>Weather <span>History</span></h1>
-    <div class="meta" id="meta">Pick a radar and a date to rebuild a storm.</div>
+<header class="topbar">
+  <div class="site">
+    <div class="siteline"><span class="code" id="siteCode"></span> <span id="siteName">Weather History</span></div>
+    <div class="sub" id="siteSub">Pick a radar and a date to rebuild a storm</div>
   </div>
   <div class="hbtns">
-    <button class="hbtn primary" id="openPicker">Change storm</button>
-    <a class="hbtn" href="index.html">Live radar</a>
+    <button class="pill" id="openPicker">Storms</button>
+    <a class="pill" href="index.html">Live</a>
   </div>
 </header>
 <div class="status" id="status" hidden></div>
@@ -151,15 +153,37 @@ body.picking #scene{cursor:crosshair}
   </div>
 </div>
 
+<!-- volume warning -->
+<div class="sheet" id="volWarn" hidden>
+  <div class="card">
+    <h2>Volume <span>render</span></h2>
+    <p>Volume render draws the whole storm as glowing, see-through fog, like GR2Analyst. It works the graphics chip hard: on older phones (roughly iPhone 11 or earlier, or budget Android phones) it can stutter, drain battery or make the phone warm.</p>
+    <p>If it stutters, switch Quality to Low in Controls. The app will also lower it by itself if things get too slow.</p>
+    <div class="btnrow"><button class="ghost" id="vwLow">Start on Low</button><button class="go" id="vwMed">Medium is fine</button></div>
+  </div>
+</div>
+
 <div class="dock">
-  <div class="dock-head">
-    <div class="seg grow" role="group" aria-label="View">
+ <div class="dock-in">
+  <div class="product">
+    <div style="min-width:0"><div class="pname" id="pname">Super-Res Reflectivity</div><div class="psub" id="psub">Elevation = 0.5°</div></div>
+    <div class="ptime"><div class="pclock" id="pclock">–</div><div class="psub" id="pdate"></div></div>
+  </div>
+  <div class="strip">
+    <div class="scale" id="scale"></div>
+    <div class="ticks" data-for="z"><span>15</span><span>25</span><span>35</span><span>45</span><span>55</span><span>65</span><span>75 dBZ</span></div>
+    <div class="ticks" data-for="v"><span>35 toward</span><span>15</span><span>0</span><span>15</span><span>35 m/s away</span></div>
+    <div class="ticks" data-for="c"><span>0.2</span><span>0.5</span><span>0.8</span><span>0.9</span><span>0.95</span><span>1.0 CC</span></div>
+  </div>
+  <div class="toolbar">
+    <div class="seg views" role="group" aria-label="View">
       <button id="vRadar" aria-pressed="true">Radar</button>
       <button id="vTilts" aria-pressed="false">Tilts</button>
       <button id="vBlocks" aria-pressed="false">Blocks</button>
       <button id="vShells" aria-pressed="false">Shells</button>
+      <button id="vVolume" aria-pressed="false">Volume</button>
     </div>
-    <div class="seg" role="group" aria-label="Data">
+    <div class="seg data" role="group" aria-label="Data">
       <button id="dZ" aria-pressed="true">dBZ</button>
       <button id="dV" class="vel" aria-pressed="false">Vel</button>
       <button id="dC" class="ccb" aria-pressed="false">CC</button>
@@ -175,6 +199,11 @@ body.picking #scene{cursor:crosshair}
   <div class="loadbar" id="loadbar" aria-hidden="true"></div>
   <div class="dock-body" id="dockBody" hidden>
     <div class="chips" data-views="radar"><span class="lbl">Overlay</span><button class="chip" id="raise" aria-pressed="false">Raise 3D storm</button></div>
+    <div class="chips" data-views="volume"><span class="lbl">Quality</span><button class="chip sel" id="qLow" aria-pressed="false">Low</button><button class="chip sel" id="qMed" aria-pressed="true">Medium</button><button class="chip sel" id="qHigh" aria-pressed="false">High</button></div>
+    <div class="row" data-views="volume"><label for="vOp">Fog density</label><input id="vOp" type="range" min="10" max="100" value="40"><output id="vOpv">40%</output></div>
+    <div class="row" data-views="volume"><label for="vMin" id="vMinLbl">Glow from</label><input id="vMin" type="range" min="10" max="60" value="25"><output id="vMinv">25</output></div>
+    <div class="chips" data-views="volume"><span class="lbl">Style</span><button class="chip sel" id="vPal" aria-pressed="true">GR2 colours</button><button class="chip sel" id="vBox" aria-pressed="true">Box &amp; heights</button><button class="chip sel" id="vShell" aria-pressed="false">Shells inside</button></div>
+    <div class="note warnnote" data-views="volume">Volume render is heavy on older phones. If it stutters, pick Low.</div>
     <div class="chips shellchips" id="zChips"><span class="lbl">dBZ shells</span></div>
     <div class="chips shellchips" id="vChips"><span class="lbl">Wind shells</span></div>
     <div class="chips shellchips" id="cChips"><span class="lbl">Low-CC shells</span></div>
@@ -183,15 +212,9 @@ body.picking #scene{cursor:crosshair}
     <div class="row" data-views="tilts blocks"><label for="min" id="minLbl">Min dBZ</label><input id="min" type="range" min="10" max="70" value="25"><output id="minv">25</output></div>
     <div class="row" data-views="tilts"><label for="spread">Spread tilts</label><input id="spread" type="range" min="0" max="6" step="0.5" value="0"><output id="spreadv">0</output></div>
     <div class="row" data-views="radar"><label for="radarOp">Radar opacity</label><input id="radarOp" type="range" min="10" max="100" value="90"><output id="radarOpv">90%</output></div>
-    <div class="row lift" data-views="tilts blocks shells"><label for="lift">Lift off map</label><input id="lift" type="range" min="0" max="40" step="1" value="0"><output id="liftv">0 km</output></div>
+    <div class="row lift" data-views="tilts blocks shells volume"><label for="lift">Lift off map</label><input id="lift" type="range" min="0" max="40" step="1" value="0"><output id="liftv">0 km</output></div>
     <div class="row"><label for="exag">Height ×</label><input id="exag" type="range" min="1" max="5" step="0.5" value="2.5"><output id="exagv">2.5</output></div>
-    <div class="row" data-views="tilts blocks shells"><label for="cut">Cut away</label><input id="cut" type="range" min="-150" max="150" value="-150"><output id="cutv">off</output></div>
-    <div>
-      <div class="scale" id="scale"></div>
-      <div class="ticks" data-for="z"><span>15</span><span>25</span><span>35</span><span>45</span><span>55</span><span>65</span><span>75 dBZ</span></div>
-      <div class="ticks" data-for="v"><span>35 toward</span><span>15</span><span>0</span><span>15</span><span>35 m/s away</span></div>
-      <div class="ticks" data-for="c"><span>0.2</span><span>0.5</span><span>0.8</span><span>0.9</span><span>0.95</span><span>1.0 CC</span></div>
-    </div>
+    <div class="row" data-views="tilts blocks shells volume"><label for="cut">Cut away</label><input id="cut" type="range" min="-150" max="150" value="-150"><output id="cutv">off</output></div>
     <div class="btns">
       <button id="namesBtn" aria-pressed="true">Town names</button>
       <button id="mapBtn" hidden>Dark map</button>
@@ -199,8 +222,9 @@ body.picking #scene{cursor:crosshair}
       <button id="spin" aria-pressed="false">Auto-rotate</button>
       <button id="reset">Reset view</button>
     </div>
-    <div class="note">Velocity is wind toward (green) or away from (red) the radar. CC (correlation coefficient) near 1 is plain rain; lower CC inside a strong storm usually means large hail, and a low-CC blob on top of a rotation couplet is the classic tornado debris signature. CC only exists on dual-pol radars. Heights are stretched ×2.5 by default.<br>Radar data: Bureau of Meteorology via the AURA archive (NCI, Monash University), non-commercial licence. Map imagery © Esri and its partners. Built by Team Twister.</div>
+    <div class="note">Velocity is wind toward (green) or away from (red) the radar. CC near 1 (dark red) is plain rain; lower CC inside a strong storm usually means large hail, and a low-CC blob on a rotation couplet is the classic tornado debris signature. CC only exists on dual-pol radars. Heights are stretched ×2.5 by default.<br>Radar data: Bureau of Meteorology via the AURA archive (NCI, Monash University), non-commercial licence. Map imagery © Esri and its partners. Built by Team Twister.</div>
   </div>
+ </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -220,7 +244,7 @@ LUTC.z.fill(0,0,(10+32)*4);  // hide below 10 dBZ on the flat map
 
 const $=id=>document.getElementById(id);
 function status(msg,err){const s=$('status');if(!msg){s.hidden=true;return}s.hidden=false;s.textContent=msg;s.classList.toggle('err',!!err)}
-const st={view:'radar',data:'z',t:0,min:{z:{tilts:25,blocks:45},v:{tilts:15,blocks:20},c:{tilts:1.05,blocks:0.95}},spread:0,exag:2.5,lift:0,radarOp:90,sat:true,names:true,cut:-150,raise:false,grey:false,
+const st={volQ:'med',volOp:40,vmin:{z:25,v:15,c:0.95},volPal:'gr2',volBox:true,volShells:false,view:'radar',data:'z',t:0,min:{z:{tilts:25,blocks:45},v:{tilts:15,blocks:20},c:{tilts:1.05,blocks:0.95}},spread:0,exag:2.5,lift:0,radarOp:90,sat:true,names:true,cut:-150,raise:false,grey:false,
   op:{z:{20:13,40:28,50:50,60:95},v:{in15:22,in25:85,out15:22,out25:85},c:{cc90:35,cc80:95}},
   on:{z:{20:true,40:true,50:true,60:true},v:{in15:true,in25:true,out15:true,out25:true},c:{cc90:true,cc80:true}}};
 const SHELLS={
@@ -410,16 +434,24 @@ async function startSession(site,list,keepFocus){
   }
 }
 function drawLoadbar(){const lb=$('loadbar');lb.innerHTML='';frames.forEach((f,i)=>{const s=document.createElement('i');s.className=({dl:'dl',pr:'pr',ok:'ok',bad:'bad'})[f.state]||'';if(i===st.t)s.classList.add('cur');s.title=fmtTime(f.entry.time);lb.appendChild(s)})}
+const PNAME={z:'Super-Res Reflectivity',v:'Super-Res Velocity',c:'Correlation Coefficient'};
+const VNAME={tilts:'All tilts, true heights',blocks:'3D Blocks',shells:'3D Shells',volume:'Volume Render'};
 function meta(){
-  if(!session){$('meta').textContent='Pick a radar and a date to rebuild a storm.';return}
-  const f=frames[st.t],lab={z:'Reflectivity',v:'Velocity',c:'Correlation coefficient'}[st.data];
-  const peak=f&&f.out?` · peak <span class="hot">${Math.round(f.out.maxz)} dBZ</span>`:'';
-  $('meta').innerHTML=`<b>${f?fmtTime(f.entry.time):''}</b> ${f?fmtDate(f.entry.time):''} · ${session.site.name} · ${lab}${peak}`;
+  const f=frames[st.t];
+  if(!session){$('siteCode').textContent='';$('siteName').textContent='Weather History';$('siteSub').textContent='Pick a radar and a date to rebuild a storm';
+    $('pname').textContent=PNAME[st.data];$('psub').textContent='';$('pclock').textContent='–';$('pdate').textContent='';return}
+  $('siteCode').textContent='IDR'+String(session.site.id).padStart(2,'0');$('siteName').textContent=session.site.name;
+  const nt=f&&f.out?f.out.tilts.length:0,peak=f&&f.out?` · peak <span class="hot">${Math.round(f.out.maxz)} dBZ</span>`:'';
+  $('siteSub').innerHTML=`AURA archive${nt?` · ${nt} tilts`:''}${$('area').value==='close'?' · close-up':''}${peak}`;
+  $('pname').textContent=PNAME[st.data];
+  $('psub').textContent=st.view==='radar'?(f&&f.out?`Elevation = ${f.out.polar.el.toFixed(1)}°`:''):`${VNAME[st.view]} · height ×${st.exag}`;
+  $('pclock').textContent=f?new Date(f.entry.time).toLocaleTimeString([],{hour:'numeric',minute:'2-digit',timeZoneName:'short'}):'–';
+  $('pdate').textContent=f?new Date(f.entry.time).toLocaleDateString():'';
 }
 
 /* ================= drawing ================= */
 const tmp=new THREE.Object3D(),cc=new THREE.Color();
-function clearStorm(){for(const o of storm.children.slice()){storm.remove(o);if(o.isInstancedMesh)o.geometry.dispose();[].concat(o.material).forEach(m=>m.dispose())}}
+function clearStorm(){for(const o of storm.children.slice()){storm.remove(o);if(o.userData.keep)continue;if(o.isInstancedMesh)o.geometry.dispose();[].concat(o.material).forEach(m=>m.dispose())}}
 const colorOf=d=>ramp(RAMP[st.data],d);
 function passes(d){const m=st.min[st.data][st.view];return st.data==='z'?d>=m:st.data==='v'?Math.abs(d)>=m:d<=m}
 function buildBlocks(o){
@@ -465,19 +497,105 @@ function render(){
   if(!fr){clearStorm();return}
   if(fr.state!=='ok'){if(fr.state==='bad')status(`Couldn't load ${fmtTime(fr.entry.time)}: ${fr.err}`,true);else status(`Still loading ${fmtTime(fr.entry.time)}…`);return}
   if(frames.every(f=>f.state==='ok'||f.state==='bad'))status(null);else if(!$('status').classList.contains('err'))status(null);
-  clearStorm();freeOldGeometry(st.t);
+  clearStorm();freeOldGeometry(st.t);freeVolTextures(st.t);dropFrame();document.body.classList.toggle('withshells',st.view==='volume'&&st.volShells);
+  if(satMesh)satMesh.material.color.setScalar(st.view==='volume'?0.45:1);
   const radar=st.view==='radar';
   TOPR=Math.min(150,(fr.out.polar.r0+fr.out.polar.rs*(fr.out.polar.z?fr.out.polar.z.nbins:0))/1000||150);
   topPlane.visible=radar;
   if(radar){const key=`${st.t}|${st.data}`;if(key!==topKey){if(topTex)topTex.dispose();topTex=polarTexture(fr,st.data)||polarTexture(fr,'z');topKey=key}
     topPlane.material.map=topTex;topPlane.material.opacity=st.radarOp/100;topPlane.material.needsUpdate=true;topPlane.scale.set(TOPR*2,TOPR*2,1);
     if(st.raise)buildShells(fr)}
-  else if(st.view==='blocks')buildBlocks(fr.out);else if(st.view==='tilts')buildTilts(fr.out);else buildShells(fr);
+  else if(st.view==='blocks')buildBlocks(fr.out);else if(st.view==='tilts')buildTilts(fr.out);else if(st.view==='volume')buildVolume(fr);else buildShells(fr);
   storm.scale.y=st.exag;storm.position.y=st.lift;
 }
 
+/* ================= volume render (GR2Analyst style) ================= */
+const GR2Z=[[5,[4,233,231]],[10,[1,159,244]],[15,[3,0,244]],[20,[2,253,2]],[25,[1,197,1]],[30,[0,142,0]],[35,[253,248,2]],[40,[229,188,0]],[45,[253,149,0]],[50,[253,0,0]],[55,[212,0,0]],[60,[188,0,0]],[65,[248,0,253]],[70,[152,84,198]],[75,[253,253,253]]];
+const VOL_STEPS={low:110,med:190,high:300};
+const lutCache={};
+function lutTex(field,pal){const key=field+pal;if(lutCache[key])return lutCache[key];
+  const R=field==='z'?(pal==='gr2'?GR2Z:ZST):RAMP[field],d=new Uint8Array(256*4);
+  for(let q=1;q<256;q++){const[r,g,b]=ramp(R,DEC[field](q));d.set([r,g,b,255],q*4)}
+  const t=new THREE.DataTexture(d,256,1,THREE.RGBAFormat);t.needsUpdate=true;t.magFilter=t.minFilter=THREE.LinearFilter;return lutCache[key]=t}
+function tex3(data,G){const t=new THREE.DataTexture3D(data,G.nx,G.ny,G.nz);t.format=THREE.RedFormat;t.type=THREE.UnsignedByteType;
+  t.minFilter=t.magFilter=THREE.LinearFilter;t.unpackAlignment=1;t.needsUpdate=true;return t}
+function volTex(fr,field){fr.vtex=fr.vtex||{};if(fr.vtex[field])return fr.vtex[field];const G=fr.out.grid;let d=fr.out.vol[field];
+  if(field!=='z'){const fillv=field==='v'?64:200;d=d.slice();for(let i=0;i<d.length;i++)if(!d[i])d[i]=fillv}   // empty air = calm / pure rain, so smoothing can't invent values
+  return fr.vtex[field]=tex3(d,G)}
+const volMat=new THREE.ShaderMaterial({
+  uniforms:{uZ:{value:null},uF:{value:null},uLut:{value:null},uField:{value:0},uMin:{value:25},uOpacity:{value:0.55},uSteps:{value:190},uCut:{value:-1},uCam:{value:new THREE.Vector3()}},
+  vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`precision highp float;precision highp sampler3D;
+uniform sampler3D uZ;uniform sampler3D uF;uniform sampler2D uLut;uniform int uField;uniform float uMin;uniform float uOpacity;uniform float uSteps;uniform float uCut;uniform vec3 uCam;varying vec3 vPos;
+vec2 hitBox(vec3 o,vec3 d){vec3 inv=1.0/d;vec3 t0=(vec3(-0.5)-o)*inv;vec3 t1=(vec3(0.5)-o)*inv;vec3 a=min(t0,t1);vec3 b=max(t0,t1);return vec2(max(max(a.x,a.y),a.z),min(min(b.x,b.y),b.z));}
+void main(){
+  vec3 d=normalize(vPos-uCam);vec2 b=hitBox(uCam,d);if(b.x>b.y)discard;b.x=max(b.x,0.0);
+  float dt=1.0/uSteps;float t=b.x+dt*fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);
+  vec4 acc=vec4(0.0);
+  for(int i=0;i<1400;i++){
+    if(t>b.y||acc.a>0.97)break;
+    vec3 p=uCam+d*t;t+=dt;
+    if(p.x<uCut)continue;
+    vec3 tc=vec3(p.x+0.5,0.5-p.z,p.y+0.5);
+    float zq=texture(uZ,tc).r*255.0;float dbz=zq-32.0;float a=0.0;vec3 col=vec3(0.0);
+    if(uField==0){a=smoothstep(uMin,uMin+6.0,dbz)*(0.18+0.82*clamp((dbz-uMin)/40.0,0.0,1.0));col=texture(uLut,vec2((zq+0.5)/256.0,0.5)).rgb;}
+    else if(uField==1){float fq=texture(uF,tc).r*255.0;float v=fq-64.0;a=smoothstep(12.0,18.0,dbz)*smoothstep(uMin,uMin+5.0,abs(v))*(0.25+0.75*clamp((abs(v)-uMin)/25.0,0.0,1.0));col=texture(uLut,vec2((fq+0.5)/256.0,0.5)).rgb;}
+    else{float fq=texture(uF,tc).r*255.0;float c=fq/200.0;a=smoothstep(25.0,32.0,dbz)*(1.0-smoothstep(uMin-0.05,uMin,c))*(0.3+0.7*clamp((uMin-c)/0.25,0.0,1.0));col=texture(uLut,vec2((fq+0.5)/256.0,0.5)).rgb;}
+    a=clamp(a*uOpacity*dt*60.0,0.0,1.0);
+    acc.rgb+=(1.0-acc.a)*a*col;acc.a+=(1.0-acc.a)*a;
+  }
+  if(acc.a<0.004)discard;
+  gl_FragColor=vec4(acc.rgb/acc.a,acc.a);
+}`,
+  transparent:true,depthWrite:false,depthTest:false,side:THREE.BackSide});
+const volMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),volMat);volMesh.userData.keep=true;volMesh.renderOrder=20;volMesh.frustumCulled=false;
+const _inv=new THREE.Matrix4();
+function updateVolCam(){if(!volMesh.parent)return;volMesh.updateMatrixWorld();_inv.copy(volMesh.matrixWorld).invert();volMat.uniforms.uCam.value.copy(camera.position).applyMatrix4(_inv)}
+let frameGroup=null,FRAME_LABELS=[];
+function dropFrame(){if(frameGroup){world.remove(frameGroup);disposeTree(frameGroup);frameGroup=null}FRAME_LABELS=[]}
+function buildFrame(G){   // GR2-style wireframe box with height marks every 5 km
+  dropFrame();if(!st.volBox)return;
+  frameGroup=new THREE.Group();world.add(frameGroup);
+  const W=G.nx*G.dx,X0=G.x0,X1=G.x0+W,Z0=-G.y0,Z1=-(G.y0+W),top=G.nz*G.dz,y=h=>st.lift+h*st.exag,pts=[],faint=[];
+  const corners=[[X0,Z0],[X1,Z0],[X1,Z1],[X0,Z1]];
+  for(let i=0;i<4;i++){const[a,b]=corners[i],[c,d]=corners[(i+1)%4];pts.push(a,y(0),b,c,y(0),d,a,y(top),b,c,y(top),d,a,y(0),b,a,y(top),b)}
+  for(let h=5;h<top;h+=5)for(let i=0;i<4;i++){const[a,b]=corners[i],[c,d]=corners[(i+1)%4];faint.push(a,y(h),b,c,y(h),d)}
+  const L=(arr,op)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));return new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0xcfd8e3,transparent:true,opacity:op,fog:false}))};
+  frameGroup.add(L(pts,0.55),L(faint,0.16));
+  for(let h=5;h<=top;h+=5){const sp=label(`${h} km`,X0,Z0,'#cfd8e3');LABELS.pop();sp.position.set(X0-1,y(h),Z0+1);FRAME_LABELS.push(sp);frameGroup.add(sp)}
+}
+function buildVolume(fr){
+  const G=fr.out.grid,W=G.nx*G.dx,H=G.nz*G.dz,u=volMat.uniforms;
+  volMesh.scale.set(W,H,W);volMesh.position.set(G.x0+W/2,H/2,-(G.y0+W/2));
+  u.uZ.value=volTex(fr,'z');u.uF.value=st.data==='z'?u.uZ.value:volTex(fr,st.data);
+  u.uLut.value=lutTex(st.data,st.volPal);u.uField.value={z:0,v:1,c:2}[st.data];u.uMin.value=st.vmin[st.data];
+  u.uOpacity.value=st.volOp/100;u.uSteps.value=VOL_STEPS[st.volQ];u.uCut.value=st.cut<=-150?-1:(st.cut-(G.x0+W/2))/W;
+  storm.add(volMesh);
+  if(st.volShells)buildShells(fr);
+  buildFrame(G);
+}
+function freeVolTextures(keep){frames.forEach((f,i)=>{if(Math.abs(i-keep)>1&&f.vtex){for(const t of Object.values(f.vtex))t.dispose();f.vtex=null}})}
+/* keep it smooth: if frames get slow in Volume view, step quality down */
+let fpsT=0,fpsN=0,fpsAcc=0,lastQualityDrop=0;
+function watchFps(now){
+  if(st.view!=='volume'){fpsN=0;fpsAcc=0;fpsT=now;return}
+  const dt=now-fpsT;fpsT=now;if(dt>500)return;fpsAcc+=dt;fpsN++;
+  if(fpsN>=45){const avg=fpsAcc/fpsN;fpsN=0;fpsAcc=0;
+    if(avg>70&&st.volQ!=='low'&&now-lastQualityDrop>4000){lastQualityDrop=now;setQuality(st.volQ==='high'?'med':'low');status(`Volume quality lowered to ${st.volQ==='low'?'Low':'Medium'} to keep it smooth.`);setTimeout(()=>status(null),3500)}}
+}
+function setQuality(q){st.volQ=q;[['low','qLow'],['med','qMed'],['high','qHigh']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===q));
+  try{localStorage.setItem('hist-volq',q)}catch(e){}
+  applyPixelRatio();volMat.uniforms.uSteps.value=VOL_STEPS[q]}
+function applyPixelRatio(){const pr=st.view==='volume'?(st.volQ==='low'?1:st.volQ==='med'?Math.min(devicePixelRatio,1.5):Math.min(devicePixelRatio,2)):Math.min(devicePixelRatio,2);
+  if(renderer.getPixelRatio()!==pr){renderer.setPixelRatio(pr);resize()}}
+function syncVolMin(){const el=$('vMin'),d=st.data;
+  if(d==='z'){el.min=10;el.max=60;el.step=1;$('vMinLbl').textContent='Glow from';$('vMinv').textContent=st.vmin.z+' dBZ'}
+  else if(d==='v'){el.min=5;el.max=40;el.step=1;$('vMinLbl').textContent='Glow from';$('vMinv').textContent=st.vmin.v+' m/s'}
+  else{el.min=0.6;el.max=0.99;el.step=0.01;$('vMinLbl').textContent='Glow below';$('vMinv').textContent=st.vmin.c.toFixed(2)}
+  el.value=st.vmin[d]}
+
 /* ================= controls ================= */
-function drawScale(){const sc=$('scale');sc.innerHTML='';const R=RAMP[st.data];
+function drawScale(){const sc=$('scale');sc.innerHTML='';const R=st.data==='z'&&st.view==='volume'&&st.volPal==='gr2'?GR2Z:RAMP[st.data];
   const[a,b,s]=st.data==='z'?[15,76,1]:st.data==='v'?[-35,35,1]:[0.2,1.05,0.0125];
   for(let v=a;v<=b;v+=s){const i=document.createElement('i');i.style.background=`rgb(${ramp(R,v).map(Math.round)})`;sc.appendChild(i)}}
 function syncMin(){const m=st.min[st.data][st.view];if(m===undefined)return;const el=$('min');
@@ -497,11 +615,12 @@ function drawOpac(){const box=$('opac');box.innerHTML='';
     inp.oninput=()=>{const n=+inp.value;st.op[st.data][k]=n;out.textContent=n===0?'off':n>=100?'solid':n+'%';later(render)};
     box.appendChild(r)}}
 function setView(v){const was=st.view;st.view=v;document.body.dataset.view=v;
-  [['radar','vRadar'],['tilts','vTilts'],['blocks','vBlocks'],['shells','vShells']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===v));
-  syncMin();render();if((v==='radar')!==(was==='radar'))home()}
+  [['radar','vRadar'],['tilts','vTilts'],['blocks','vBlocks'],['shells','vShells'],['volume','vVolume']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===v));
+  if(v==='volume'){let ok=null;try{ok=localStorage.getItem('hist-volwarn')}catch(e){}if(!ok)$('volWarn').hidden=false}
+  applyPixelRatio();syncMin();syncVolMin();drawScale();render();if((v==='radar')!==(was==='radar'))home()}
 function setData(d,quiet){st.data=d;document.body.dataset.data=d;[['z','dZ'],['v','dV'],['c','dC']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===d));
-  topKey='';drawScale();drawOpac();syncMin();if(!quiet)render()}
-$('vRadar').onclick=()=>setView('radar');$('vTilts').onclick=()=>setView('tilts');$('vBlocks').onclick=()=>setView('blocks');$('vShells').onclick=()=>setView('shells');
+  topKey='';drawScale();drawOpac();syncMin();syncVolMin();if(!quiet)render()}
+$('vVolume').onclick=()=>setView('volume');$('vRadar').onclick=()=>setView('radar');$('vTilts').onclick=()=>setView('tilts');$('vBlocks').onclick=()=>setView('blocks');$('vShells').onclick=()=>setView('shells');
 $('dZ').onclick=()=>setData('z');$('dV').onclick=()=>setData('v');$('dC').onclick=()=>setData('c');
 let deb=null;const later=f=>{clearTimeout(deb);deb=setTimeout(f,90)};
 $('time').oninput=()=>{st.t=+$('time').value;meta();drawLoadbar();later(render)};
@@ -509,9 +628,9 @@ $('prev').onclick=()=>{if(st.t>0){st.t--;render()}};$('next').onclick=()=>{if(st
 $('min').oninput=()=>{st.min[st.data][st.view]=+$('min').value;$('minv').textContent=st.data==='c'?(+$('min').value).toFixed(2):$('min').value;later(render)};
 $('spread').oninput=()=>{st.spread=+$('spread').value;$('spreadv').textContent=st.spread;later(render)};
 $('radarOp').oninput=()=>{st.radarOp=+$('radarOp').value;$('radarOpv').textContent=st.radarOp+'%';topPlane.material.opacity=st.radarOp/100};
-$('lift').oninput=()=>{st.lift=+$('lift').value;$('liftv').textContent=st.lift+' km';storm.position.y=st.lift};
-$('exag').oninput=()=>{st.exag=+$('exag').value;$('exagv').textContent=st.exag;storm.scale.y=st.exag;if(st.view==='tilts')later(render)};
-$('cut').oninput=()=>{st.cut=+$('cut').value;clip.constant=-st.cut;$('cutv').textContent=st.cut<=-150?'off':(st.cut<0?`${-st.cut} km W`:`${st.cut} km E`)};
+$('lift').oninput=()=>{st.lift=+$('lift').value;$('liftv').textContent=st.lift+' km';storm.position.y=st.lift;if(st.view==='volume')later(render)};
+$('exag').oninput=()=>{st.exag=+$('exag').value;$('exagv').textContent=st.exag;storm.scale.y=st.exag;meta();if(st.view==='tilts'||st.view==='volume')later(render)};
+$('cut').oninput=()=>{st.cut=+$('cut').value;clip.constant=-st.cut;if(st.view==='volume')later(render);$('cutv').textContent=st.cut<=-150?'off':(st.cut<0?`${-st.cut} km W`:`${st.cut} km E`)};
 $('grey').onclick=()=>{st.grey=!st.grey;$('grey').setAttribute('aria-pressed',st.grey);drawOpac();render()};
 $('opReset').onclick=()=>{st.op=JSON.parse(JSON.stringify(OP_DEFAULT));drawOpac();render()};
 $('raise').onclick=()=>{st.raise=!st.raise;document.body.classList.toggle('raised',st.raise);$('raise').setAttribute('aria-pressed',st.raise);render();
@@ -543,9 +662,19 @@ function home(){const narrow=innerWidth<600;
   const fr=frames[st.t],c=fr&&fr.out?stormCentre(fr):(session?(session.opt.half<100?session.focus:{x:0,y:0}):{x:0,y:0}),s=session?Math.max(0.6,session.opt.half/120):1;
   controls.target.set(c.x,8,-c.y);camera.position.set(c.x+45*s,(narrow?150:95)*s,-c.y+(narrow?170:115)*s);controls.update()}
 $('reset').onclick=home;
+const ackWarn=q=>{try{localStorage.setItem('hist-volwarn','1')}catch(e){}$('volWarn').hidden=true;setQuality(q);render()};
+$('vwLow').onclick=()=>ackWarn('low');$('vwMed').onclick=()=>ackWarn('med');
+$('qLow').onclick=()=>{setQuality('low');render()};$('qMed').onclick=()=>{setQuality('med');render()};$('qHigh').onclick=()=>{setQuality('high');render()};
+$('vOp').oninput=()=>{st.volOp=+$('vOp').value;$('vOpv').textContent=st.volOp+'%';volMat.uniforms.uOpacity.value=st.volOp/100};
+$('vMin').oninput=()=>{st.vmin[st.data]=+$('vMin').value;syncVolMin();volMat.uniforms.uMin.value=st.vmin[st.data]};
+$('vPal').onclick=()=>{st.volPal=st.volPal==='gr2'?'rs':'gr2';$('vPal').setAttribute('aria-pressed',st.volPal==='gr2');$('vPal').textContent=st.volPal==='gr2'?'GR2 colours':'RadarScope colours';drawScale();render()};
+$('vBox').onclick=()=>{st.volBox=!st.volBox;$('vBox').setAttribute('aria-pressed',st.volBox);render()};
+$('vShell').onclick=()=>{st.volShells=!st.volShells;$('vShell').setAttribute('aria-pressed',st.volShells);render()};
+try{const q=localStorage.getItem('hist-volq');if(q&&VOL_STEPS[q])setQuality(q)}catch(e){}
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
-addEventListener('resize',resize);resize();drawScale();drawChips();drawOpac();syncMin();home();loadSites();
-(function loop(){requestAnimationFrame(loop);controls.update();
+addEventListener('resize',resize);resize();drawScale();drawChips();drawOpac();syncMin();syncVolMin();meta();home();loadSites();
+(function loop(now){requestAnimationFrame(loop);controls.update();updateVolCam();watchFps(now||0);
+  for(const sp of FRAME_LABELS){const d=camera.position.distanceTo(sp.position),h=Math.max(1.8,d*0.018);sp.scale.set(h*sp.userData.aspect,h,1)}
   for(const sp of LABELS){const d=camera.position.distanceTo(sp.position),h=Math.max(2.2,d*0.022);sp.scale.set(h*sp.userData.aspect,h,1)}
   renderer.render(scene,camera)})();
 </script>
