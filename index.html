@@ -131,6 +131,9 @@ h1 #hName{min-width:0;white-space:nowrap}
 /* BoM prints a copyright banner along the top and a caption along the bottom of each radar picture: trim them off */
 #map2d img.bomframe{clip-path:inset(3.6% 0 5% 0)}
 #map2d.rs .leaflet-radar-pane{filter:url(#rsZ)}
+#map2d.rsv .leaflet-radar-pane{filter:url(#rsV)}
+.vbar{display:flex;height:9px;overflow:hidden;border-radius:1px;margin-bottom:2px}
+.vbar i{flex:1}
 body.v2d #map{visibility:hidden}
 body.v2d .only3d,body:not(.v2d) .only2d{display:none!important}
 .dock-head{flex-wrap:wrap}
@@ -169,6 +172,10 @@ body.now .frames{display:none!important}
   <filter id="rsZ" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
     <feColorMatrix id="rsZm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
     <feComponentTransfer><feFuncR id="rsZr" type="discrete" tableValues="0"/><feFuncG id="rsZg" type="discrete" tableValues="0"/><feFuncB id="rsZb" type="discrete" tableValues="0"/></feComponentTransfer>
+  </filter>
+  <filter id="rsV" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix id="rsVm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+    <feComponentTransfer><feFuncR id="rsVr" type="discrete" tableValues="0"/><feFuncG id="rsVg" type="discrete" tableValues="0"/><feFuncB id="rsVb" type="discrete" tableValues="0"/></feComponentTransfer>
   </filter>
 </defs></svg>
 <header>
@@ -218,7 +225,7 @@ body.now .frames{display:none!important}
   <div class="dock-body" id="dockBody">
     <div class="only2d" style="display:grid;gap:10px">
       <div id="zKey2d"><div class="bands" id="bands"></div><div class="ticks"><span>12</span><span>23</span><span>31</span><span>37</span><span>43</span><span>49</span><span>55</span><span>61</span><span>64+ dBZ</span></div></div>
-      <div class="vkey" id="vKey2d" hidden><span id="vKeyText">BoM Doppler wind · 128 km around the radar</span><button id="keyBtn">Colour key</button></div>
+      <div id="vKey2d" hidden><div class="vbar" id="vbar"></div><div class="vkey"><span>◀ Toward radar</span><button id="keyBtn">BoM key</button><span>Away from radar ▶</span></div></div>
       <div class="row"><label for="src2d">Reflectivity</label><select id="src2d"><option value="bom">BoM (sharper, every 5 min)</option><option value="rv">RainViewer (every 10 min)</option></select><span></span></div>
       <div class="row"><label for="range2d">Area</label><select id="range2d"><option value="64">64 km around the radar</option><option value="128" selected>128 km around the radar</option><option value="256">256 km around the radar</option><option value="nat">All of Australia</option></select><span></span></div>
       <div class="row"><label for="frames2d">Loop length</label><select id="frames2d"><option value="6">30 min</option><option value="12" selected>1 hour</option><option value="24">2 hours</option></select><span></span></div>
@@ -614,16 +621,24 @@ const D2=(()=>{
   /* RadarScope colours: the phone's graphics filter swaps BoM's 15 colours while drawing. Step 1 turns each BoM colour into one
      unique brightness (s = -0.5R + 0.375G + 0.125B + 0.5); step 2 looks that brightness up in a table of RadarScope colours. */
   const W=[-0.5,0.375,0.125,0.5],ZMID=[17.5,25.5,29.5,32.5,35.5,38.5,41.5,44.5,47.5,50.5,53.5,56.5,59.5,62.5,67];
-  (function buildFilter(){
-    const m=`${W[0]} ${W[1]} ${W[2]} 0 ${W[3]}`;document.getElementById('rsZm').setAttribute('values',`${m}  ${m}  ${m}  0 0 0 1 0`);
-    const sv=BANDS.map(([r,g,b])=>(W[0]*r+W[1]*g+W[2]*b)/255+W[3]),N=256,tr=[],tg=[],tb=[];
+  function buildFilter(id,w,pal,target){
+    const m=`${w[0]} ${w[1]} ${w[2]} 0 ${w[3]}`;document.getElementById(id+'m').setAttribute('values',`${m}  ${m}  ${m}  0 0 0 1 0`);
+    const sv=pal.map(([r,g,b])=>(w[0]*r+w[1]*g+w[2]*b)/255+w[3]),N=256,tr=[],tg=[],tb=[];
     for(let i=0;i<N;i++){const x=(i+0.5)/N;let k=0;for(let j=1;j<sv.length;j++)if(Math.abs(sv[j]-x)<Math.abs(sv[k]-x))k=j;
-      const c=col(ZMID[k]).map(v=>Math.round(v)/255);tr.push(c[0].toFixed(3));tg.push(c[1].toFixed(3));tb.push(c[2].toFixed(3))}
-    document.getElementById('rsZr').setAttribute('tableValues',tr.join(' '));document.getElementById('rsZg').setAttribute('tableValues',tg.join(' '));document.getElementById('rsZb').setAttribute('tableValues',tb.join(' '));
-  })();
+      const c=target(k).map(v=>Math.round(v)/255);tr.push(c[0].toFixed(3));tg.push(c[1].toFixed(3));tb.push(c[2].toFixed(3))}
+    document.getElementById(id+'r').setAttribute('tableValues',tr.join(' '));document.getElementById(id+'g').setAttribute('tableValues',tg.join(' '));document.getElementById(id+'b').setAttribute('tableValues',tb.join(' '));
+  }
+  buildFilter('rsZ',W,BANDS,k=>col(ZMID[k]));
+  /* BoM Doppler wind: 9 blues toward the radar (darkest = fastest), white near zero, 9 yellows to reds away (red = fastest).
+     Repainted RadarScope style: greens toward, reds away, grey near zero. */
+  const VPAL=[[0,0,100],[17,30,120],[32,57,138],[45,80,154],[59,107,172],[74,133,190],[89,160,208],[102,183,224],[117,210,242],[255,255,255],[255,234,0],[255,206,0],[255,182,0],[255,154,0],[255,126,0],[255,98,0],[255,73,0],[255,45,0],[255,0,0]];
+  const VST2=[[-9,[200,255,200]],[-6.5,[0,255,60]],[-3.3,[0,150,40]],[-0.8,[60,90,65]],[0,[110,110,110]],[0.8,[95,60,60]],[3.3,[170,0,20]],[6.5,[255,30,60]],[9,[255,200,170]]];
+  const vcol=k=>{const v=k-9;if(v<=VST2[0][0])return VST2[0][1];for(let i=1;i<VST2.length;i++){const[a,ca]=VST2[i-1],[b,cb]=VST2[i];if(v<=b){const t=(v-a)/(b-a);return ca.map((x,j)=>x+(cb[j]-x)*t)}}return VST2.at(-1)[1]};
+  buildFilter('rsV',[-0.25,0.375,-1,0.875],VPAL,vcol);
+  function drawVbar(){const el=$('vbar');el.innerHTML='';VPAL.forEach((c,k)=>{const i=document.createElement('i');i.style.background=`rgb(${(o2.rs?vcol(k):c).map(Math.round)})`;el.appendChild(i)})}
   function drawBands(){const el=$('bands');el.innerHTML='';BANDS.forEach(([r,g,b],k)=>{const i=document.createElement('i');i.style.background=o2.rs?hex(ZMID[k]):`rgb(${r},${g},${b})`;el.appendChild(i)})}
   let map2=null,base=null,satL=null,labL=null,ringL=null,sites=[],site=null,zF=[],vF=[],cur=0,vCache=new Map(),markers=[],sitesOn=false,ready=null,timer=null;
-  drawBands();
+  drawBands();drawVbar();
   function offset(z){const m=MATRIX[z];if(!m)return null;const span=WORLD/2**z,fx=(m[0]+HALF)/span,fy=(HALF-m[1])/span,xo=Math.round(fx),yo=Math.round(fy);return{xo,yo,sx:(fx-xo)*256,sy:(fy-yo)*256,w:m[2],h:m[3]}}
   function init(){
     if(ready)return ready;
@@ -726,7 +741,7 @@ const D2=(()=>{
     if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · ${o2.product==='z'?(o2.src==='rv'?'RainViewer reflectivity':o2.range==='nat'?'BoM reflectivity, all of Australia':`BoM reflectivity ${o2.range} km`):'Doppler wind 128 km'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
     $('pZ').setAttribute('aria-pressed',o2.product==='z');$('pV').setAttribute('aria-pressed',o2.product==='v');$('pV').disabled=!(site&&site.doppler);
     $('zKey2d').hidden=o2.product!=='z';$('vKey2d').hidden=o2.product!=='v';
-    $('map2d').classList.toggle('rs',o2.rs&&o2.product==='z'&&o2.src==='bom');
+    $('map2d').classList.toggle('rs',o2.rs&&o2.product==='z'&&o2.src==='bom');$('map2d').classList.toggle('rsv',o2.rs&&o2.product==='v');
     $('range2d').disabled=o2.src==='rv';
     const km=o2.product==='v'?RKM:(o2.range==='nat'||o2.src==='rv'?0:+o2.range);
     ringL.setLatLng(site?[site.lat,site.lon]:[0,0]);ringL.setRadius((km||RKM)*1000);if(o2.ring&&site&&km)ringL.addTo(map2);else map2.removeLayer(ringL);
@@ -755,7 +770,7 @@ const D2=(()=>{
     setFrames(n){o2.frames=n;store.set('frames2d',n);refresh(true)},
     setRange(r){o2.range=r;store.set('range2d',r);if(o2.product==='v'){o2.product='z'}head();
       if(r!=='nat'&&site)fitTo(vBounds(site,+r),true);else if(r==='nat')fitTo([[-44,112],[-10,154]],true);refresh(true)},
-    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();head();if(o2.src==='rv')zF.forEach(f=>f.layer.redraw());return o2.rs},
+    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();drawVbar();head();if(o2.src==='rv')zF.forEach(f=>f.layer.redraw());return o2.rs},
     setSrc(v){o2.src=v;store.set('src2d',v);if(o2.product==='v')o2.product='z';head();refresh(true)},
     setOp(v){o2.op=v;store.set('op2d',v);show(cur)},
     toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();return o2.ring},
