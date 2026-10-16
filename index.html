@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#06090d">
@@ -129,9 +130,7 @@ h1 #hName{min-width:0;white-space:nowrap}
 #map2d .leaflet-control-attribution a{color:#ccc}
 #map2d .leaflet-control-zoom{display:none}
 /* BoM prints a copyright banner along the top and a caption along the bottom of each radar picture: trim them off */
-#map2d img.bomframe{clip-path:inset(3.6% 0 5% 0)}
-#map2d.rs .leaflet-radar-pane{filter:url(#rsZ)}
-#map2d.rsv .leaflet-radar-pane{filter:url(#rsV)}
+#map2d svg.bompic image{image-rendering:pixelated}
 .vbar{display:flex;height:9px;overflow:hidden;border-radius:1px;margin-bottom:2px}
 .vbar i{flex:1}
 body.v2d #map{visibility:hidden}
@@ -173,6 +172,7 @@ body.now .frames{display:none!important}
     <feColorMatrix id="rsZm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
     <feComponentTransfer><feFuncR id="rsZr" type="discrete" tableValues="0"/><feFuncG id="rsZg" type="discrete" tableValues="0"/><feFuncB id="rsZb" type="discrete" tableValues="0"/></feComponentTransfer>
   </filter>
+  <clipPath id="bomTrim" clipPathUnits="userSpaceOnUse"><rect x="0" y="18.5" width="512" height="468"/></clipPath>
   <filter id="rsV" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
     <feColorMatrix id="rsVm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
     <feComponentTransfer><feFuncR id="rsVr" type="discrete" tableValues="0"/><feFuncG id="rsVg" type="discrete" tableValues="0"/><feFuncB id="rsVb" type="discrete" tableValues="0"/></feComponentTransfer>
@@ -661,11 +661,22 @@ const D2=(()=>{
     return ready;
   }
   function style(){if(!map2)return;if(st.dark){map2.removeLayer(satL);map2.removeLayer(labL);base.addTo(map2)}else{map2.removeLayer(base);satL.addTo(map2);labL.addTo(map2)}}
-  const Tiles=L.GridLayer.extend({createTile(c,done){const t=document.createElement('img');t.alt='';t.referrerPolicy='no-referrer';const o=offset(c.z);
+  const NS='http://www.w3.org/2000/svg';
+  const PICS=new Set();   // every BoM picture element, so the colour switch can update them all
+  function picFilter(kind){return o2.rs?(kind==='v'?'url(#rsV)':'url(#rsZ)'):null}
+  function svgPic(url,size,kind,trim,onload,onerror){
+    const svg=document.createElementNS(NS,'svg');svg.setAttribute('viewBox',`0 0 ${size} ${size}`);svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','bompic');
+    const im=document.createElementNS(NS,'image');im.setAttribute('width',size);im.setAttribute('height',size);im.setAttribute('preserveAspectRatio','none');
+    if(trim)im.setAttribute('clip-path','url(#bomTrim)');
+    im.dataset.kind=kind;const f=picFilter(kind);if(f)im.setAttribute('filter',f);
+    if(onload)im.addEventListener('load',onload);if(onerror)im.addEventListener('error',onerror);
+    im.setAttribute('href',url);svg.appendChild(im);PICS.add(im);return svg}
+  function refilter(){for(const im of PICS){if(!im.isConnected){PICS.delete(im);continue}const f=picFilter(im.dataset.kind);if(f)im.setAttribute('filter',f);else im.removeAttribute('filter')}}
+  const Tiles=L.GridLayer.extend({createTile(c,done){const o=offset(c.z);
     const col=o?c.x-o.xo:-1,row=o?c.y-o.yo:-1;
-    if(!o||col<0||row<0||col>=o.w||row>=o.h){setTimeout(()=>done(null,t),0);return t}
-    t.style.marginLeft=o.sx+'px';t.style.marginTop=o.sy+'px';t.onload=()=>done(null,t);t.onerror=()=>{t.style.visibility='hidden';done(null,t)};
-    t.src=tileURL(c.z,row,col,this.options.time);return t}});
+    if(!o||col<0||row<0||col>=o.w||row>=o.h){const e=document.createElement('div');setTimeout(()=>done(null,e),0);return e}
+    let t;t=svgPic(tileURL(c.z,row,col,this.options.time),256,'z',false,()=>done(null,t),()=>{t.style.visibility='hidden';done(null,t)});
+    t.style.marginLeft=o.sx+'px';t.style.marginTop=o.sy+'px';return t}});
   const RVTiles=L.GridLayer.extend({createTile(c,done){const cv=document.createElement('canvas');cv.width=cv.height=256;
     const z=Math.min(c.z,7),k=2**(c.z-z),x=Math.floor(c.x/k),y=Math.floor(c.y/k),ox=(c.x-x*k)*256/k,oy=(c.y-y*k)*256/k;
     const im=new Image();im.crossOrigin='anonymous';
@@ -718,9 +729,10 @@ const D2=(()=>{
     if(!list.length){status(`No ${what} from ${site.name} in the last ${o2.frames*5} min. The radar may be offline.`,true);return false}
     const b=vBounds(site,km),have=new Map(arr.map(f=>[f.t,f])),wantT=new Set(list.map(([t])=>t));
     for(const f of arr)if(!wantT.has(f.t))map2.removeLayer(f.layer);
-    const next=list.map(([t,url])=>have.get(t)||{t,layer:L.imageOverlay(url,b,{pane:'radar',opacity:0,interactive:false,className:'bomframe'})});
+    const kind=letter==='I'?'v':'z';
+    const next=list.map(([t,url])=>have.get(t)||{t,layer:L.svgOverlay(svgPic(url,512,kind,true),b,{pane:'radar',opacity:0,interactive:false})});
     arr.length=0;arr.push(...next);
-    arr.forEach(f=>{if(!map2.hasLayer(f.layer)){f.layer.addTo(map2);const el=f.layer.getElement();if(el){el.referrerPolicy='no-referrer';el.style.imageRendering='pixelated'}}});
+    arr.forEach(f=>{if(!map2.hasLayer(f.layer))f.layer.addTo(map2)});
     status(null);return true;
   }
   async function loadV(){
@@ -741,7 +753,7 @@ const D2=(()=>{
     if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · ${o2.product==='z'?(o2.src==='rv'?'RainViewer reflectivity':o2.range==='nat'?'BoM reflectivity, all of Australia':`BoM reflectivity ${o2.range} km`):'Doppler wind 128 km'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
     $('pZ').setAttribute('aria-pressed',o2.product==='z');$('pV').setAttribute('aria-pressed',o2.product==='v');$('pV').disabled=!(site&&site.doppler);
     $('zKey2d').hidden=o2.product!=='z';$('vKey2d').hidden=o2.product!=='v';
-    $('map2d').classList.toggle('rs',o2.rs&&o2.product==='z'&&o2.src==='bom');$('map2d').classList.toggle('rsv',o2.rs&&o2.product==='v');
+    refilter();
     $('range2d').disabled=o2.src==='rv';
     const km=o2.product==='v'?RKM:(o2.range==='nat'||o2.src==='rv'?0:+o2.range);
     ringL.setLatLng(site?[site.lat,site.lon]:[0,0]);ringL.setRadius((km||RKM)*1000);if(o2.ring&&site&&km)ringL.addTo(map2);else map2.removeLayer(ringL);
