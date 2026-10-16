@@ -172,8 +172,12 @@ body.b3pick #b3d{display:none}
 .b3g{position:absolute;inset:0;overflow:hidden;border-radius:4px;background:#0b0f14}
 .b3g img{position:absolute;max-width:none}
 .b3g .shade{position:absolute;inset:0;background:rgba(0,0,0,.28)}
-.b3g .ring{position:absolute;inset:0;border-radius:50%;border:1.5px dashed rgba(90,200,250,.8)}
-.b3g .me{position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;background:var(--live);border:2px solid #fff;transform:rotate(45deg)}
+.b3det{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden}
+.b3det img{position:absolute;max-width:none}
+.b3det .shade{position:absolute;inset:0;background:rgba(0,0,0,.28)}
+.b3o{position:absolute;inset:0;transform:translateZ(0.5px)}
+.b3o .ring{position:absolute;inset:0;border-radius:50%;border:1.5px dashed rgba(90,200,250,.8)}
+.b3o .me{position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;background:var(--live);border:2px solid #fff;transform:rotate(45deg)}
 .b3s{position:absolute;left:0;top:0;transform-origin:0 0}
 .b3s svg{display:block;overflow:visible}
 .b3hint{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0px));font:500 .74rem var(--ui);color:#ddd;background:rgba(30,30,32,.85);padding:6px 11px;border-radius:9px;transition:opacity .6s;pointer-events:none;white-space:nowrap}
@@ -185,7 +189,7 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
 <body>
 <div id="map"></div>
 <div id="map2d" hidden></div>
-<div id="b3d" hidden aria-label="3D radar. Drag to turn, pinch to zoom, two fingers to move."><div class="b3z" id="b3z"><div class="b3v" id="b3v"><div class="b3w" id="b3w"><div class="b3g" id="b3g"></div></div></div></div><div class="b3hint" id="b3hint">Drag to turn · pinch to zoom · two fingers to move</div></div>
+<div id="b3d" hidden aria-label="3D radar. Drag to turn, pinch to zoom, two fingers to move."><div class="b3z" id="b3z"><div class="b3v" id="b3v"><div class="b3w" id="b3w"><div class="b3g" id="b3g"></div><div class="b3o" id="b3o"></div></div></div></div><div class="b3hint" id="b3hint">Drag to turn · pinch to zoom · two fingers to move</div></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><image id="b3img" x="0" y="0" width="512" height="512" preserveAspectRatio="none" style="image-rendering:pixelated"/><g id="b3defs"></g></defs></svg>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="rsZ" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
@@ -900,26 +904,57 @@ const D2=(()=>{
     const sl=[...$('b3w').querySelectorAll('.b3s')],n=sl.length,SZ=512/(window.devicePixelRatio||1),sc=B3.S/SZ,H=B3.S*0.028*B3.h;
     sl.forEach((d,k)=>{d.style.transform=`translateZ(${(0.8+H*(k+1)/n).toFixed(2)}px) scale(${sc.toFixed(4)})`});
   }
-  // the ground: satellite (or dark) map pieces laid out under the radar picture, plus the range ring
-  function b3ground(){
-    if(!site||!B3.S)return;const S=B3.S,km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180));
-    const W0=site.lon-b,N0=site.lat+a,z=Math.max(5,Math.min(11,Math.round(Math.log2(4*360/(2*b))))),n=2**z;
-    const tx=lon=>(lon+180)/360*n,ty=lat=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n};
+  /* the ground: satellite (or dark) map pieces laid out under the radar picture.
+     When you zoom in, a sharper patch of map is loaded for just the part you're looking at, so the ground gets more detailed
+     as you zoom (like a normal map), instead of the far-out map just being blown up. */
+  function geo(){const S=B3.S,km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180));return{S,a,b,W0:site.lon-b,N0:site.lat+a}}
+  // map pieces at zoom level z covering ground area gx0..gx1, gy0..gy1 (ground units), drawn into a box at (X0,Y0) scaled by r
+  function tilesHTML(z,gx0,gy0,gx1,gy1,X0,Y0,r){
+    const{S,a,b,W0,N0}=geo(),n=2**z;
+    const lonAt=x=>W0+x/S*2*b,latAt=y=>N0-y/S*2*a;
+    const tx=lon=>(lon+180)/360*n,ty=lat=>{const q=lat*Math.PI/180;return(1-Math.log(Math.tan(q)+1/Math.cos(q))/Math.PI)/2*n};
     const tlat=y=>Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI;
-    const x0=Math.floor(tx(W0)),x1=Math.floor(tx(site.lon+b)),y0=Math.floor(ty(N0)),y1=Math.floor(ty(site.lat-a));
+    const x0=Math.floor(tx(lonAt(gx0))),x1=Math.floor(tx(lonAt(gx1))),y0=Math.floor(ty(latAt(gy0))),y1=Math.floor(ty(latAt(gy1)));
     const layers=st.dark?['Canvas/World_Dark_Gray_Base']:['World_Imagery','Reference/World_Boundaries_and_Places'];
     let h='';
     layers.forEach((ly,li)=>{if(li===1)h+='<div class="shade"></div>';
       for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
-        const L=((x/n*360-180)-W0)/(2*b)*S,Rr=(((x+1)/n*360-180)-W0)/(2*b)*S,T=(N0-tlat(y))/(2*a)*S,Bt=(N0-tlat(y+1))/(2*a)*S;
+        const L=(((x/n*360-180)-W0)/(2*b)*S-X0)*r,Rr=((((x+1)/n*360-180)-W0)/(2*b)*S-X0)*r,T=((N0-tlat(y))/(2*a)*S-Y0)*r,Bt=((N0-tlat(y+1))/(2*a)*S-Y0)*r;
         h+=`<img alt="" src="${ESRI}${ly}/MapServer/tile/${z}/${y}/${x}" style="left:${L.toFixed(1)}px;top:${T.toFixed(1)}px;width:${(Rr-L+0.6).toFixed(1)}px;height:${(Bt-T+0.6).toFixed(1)}px">`}});
-    if(layers.length===1)h+='<div class="shade" style="background:transparent"></div>';
-    if(o2.ring)h+='<div class="ring"></div>';
-    h+='<i class="me"></i>';
-    $('b3g').innerHTML=h;
+    return{h,count:(x1-x0+1)*(y1-y0+1)};
+  }
+  function b3ground(){
+    if(!site||!B3.S)return;const{S,b}=geo(),z=Math.max(5,Math.min(11,Math.round(Math.log2(4*360/(2*b)))));
+    $('b3g').innerHTML=tilesHTML(z,0,0,S,S,0,0,1).h;
+    $('b3o').innerHTML=(o2.ring?'<div class="ring"></div>':'')+'<i class="me"></i>';
+    B3.det=null;$('b3w').querySelectorAll('.b3det').forEach(e=>e.remove());b3detailSoon();
+  }
+  let detT=null;function b3detailSoon(){clearTimeout(detT);detT=setTimeout(b3detail,220)}
+  function b3detail(){
+    if(!B3.on||!site||!B3.S)return;const c=B3.cam,w=$('b3w'),old=[...w.querySelectorAll('.b3det')];
+    const drop=()=>old.forEach(e=>e.remove());
+    if(c.zoom<1.4){drop();B3.det=null;return}
+    const{S,b}=geo(),dpr=window.devicePixelRatio||1,r=c.zoom/dpr;      // r = sharpness: box pixels per ground unit
+    const hb=document.querySelector('header').getBoundingClientRect().bottom,dt=document.querySelector('.dock').getBoundingClientRect().top;
+    const half=Math.max(innerWidth,dt-hb)/2/c.zoom*1.35/Math.max(0.35,Math.cos(c.tilt*Math.PI/180));
+    const cxg=S/2-c.gx,cyg=S/2-c.gy;
+    const gx0=Math.max(0,cxg-half),gy0=Math.max(0,cyg-half),gx1=Math.min(S,cxg+half),gy1=Math.min(S,cyg+half);
+    if(gx1<=gx0||gy1<=gy0){drop();return}
+    // skip if the patch already showing still covers this view at this sharpness
+    const d=B3.det;if(d&&Math.abs(Math.log(d.zoom/c.zoom))<0.3&&gx0>=d.gx0-1&&gy0>=d.gy0-1&&gx1<=d.gx1+1&&gy1<=d.gy1+1)return;
+    let z=Math.round(Math.log2(360*S*r/(2*b*256)));z=Math.max(6,Math.min(17,z));
+    let t;for(;;){t=tilesHTML(z,gx0,gy0,gx1,gy1,gx0,gy0,r);if(t.count<=49||z<=6)break;z--}
+    const el=document.createElement('div');el.className='b3det';
+    el.style.width=((gx1-gx0)*r).toFixed(1)+'px';el.style.height=((gy1-gy0)*r).toFixed(1)+'px';
+    el.style.transform=`translate3d(${gx0.toFixed(1)}px,${gy0.toFixed(1)}px,0.3px) scale(${(1/r).toFixed(5)})`;
+    el.innerHTML=t.h;w.insertBefore(el,$('b3o'));
+    B3.det={zoom:c.zoom,gx0,gy0,gx1,gy1};
+    // keep the old patch until the new one has loaded, so the ground never flashes
+    const imgs=[...el.querySelectorAll('img')];let left=imgs.length;const done=()=>{if(--left<=0)drop()};
+    if(!left)drop();imgs.forEach(im=>{if(im.complete)done();else{im.onload=im.onerror=done}});setTimeout(drop,2500);
   }
   function b3cam(){const c=B3.cam;
-    $('b3z').style.transform=`scale(${c.zoom.toFixed(4)})`;   // zoom = make the whole finished 3D picture bigger, the camera never moves
+    $('b3z').style.transform=`scale(${c.zoom.toFixed(4)})`;b3detailSoon();   // zoom = make the whole finished 3D picture bigger, the camera never moves
     $('b3w').style.transform=`rotateX(${c.tilt.toFixed(2)}deg) rotateZ(${c.bearing.toFixed(2)}deg) translate(${c.gx.toFixed(1)}px,${c.gy.toFixed(1)}px)`}
   function b3layout(){
     if(!B3.on)return;
