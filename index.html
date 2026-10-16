@@ -236,7 +236,7 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
       <button id="pZ" aria-pressed="true">Reflectivity</button>
       <button id="pV" aria-pressed="false">Velocity</button>
     </div>
-    <div class="seg only3d keep3" role="group" aria-label="Display mode">
+    <div class="seg only3d keep3" role="group" aria-label="Display mode" hidden>
       <button id="modeSep" aria-pressed="false">Separated</button>
       <button id="mode3d" aria-pressed="true">3D stack</button>
       <button id="modeNow" aria-pressed="false">Latest</button>
@@ -267,10 +267,10 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
       <div class="credit no-b3">2D is BoM's own live radar: reflectivity about every 5 minutes for the radar you pick (or all of Australia), and Doppler wind about every 5 minutes within 128 km of a Doppler radar (blue diamonds). Radar © Commonwealth of Australia, Bureau of Meteorology, personal use only.</div>
     </div>
     <div class="b3only" style="display:grid;gap:10px">
-      <div class="row"><label for="b3h">Height</label><input id="b3h" type="range" min="1" max="10" step="0.5" value="4"><output id="b3hv">4</output></div>
+      <div class="row"><label for="b3h">Height</label><input id="b3h" type="range" min="0.5" max="10" step="0.5" value="1"><output id="b3hv">1</output></div>
       <div class="row" id="b3minRow"><label for="b3min">Lowest shown</label><input id="b3min" type="range" min="0" max="10" step="1" value="0"><output id="b3minv">12</output></div>
       <div class="btns"><button id="b3spin" aria-pressed="false">Auto-rotate</button><button id="b3reset">Reset view</button></div>
-      <div class="credit">3D is BoM's own live radar, cut into slices by strength and stacked: light rain stays low, heavy cores stand tall. Doppler wind stacks by wind speed. If BoM stops answering, the app switches to RainViewer by itself. Separated and 3D stack use RainViewer. Radar © Commonwealth of Australia, Bureau of Meteorology, personal use only.</div>
+      <div class="credit">3D is BoM's own live radar, cut into slices by strength and stacked: light rain stays low, heavy cores stand tall. Doppler wind stacks by wind speed. If BoM stops answering, the app switches to RainViewer by itself. Radar © Commonwealth of Australia, Bureau of Meteorology, personal use only.</div>
     </div>
     <div class="frames only3d" id="frames" aria-label="Radar frames; tap to hide or show one"></div>
     <div class="row only3d"><label for="gap">Layer gap</label><input id="gap" type="range" min="0" max="10" step="0.5" value="1"><output id="gapv">1</output></div>
@@ -378,7 +378,8 @@ const SOURCES={
 /* ================= helpers ================= */
 const $=id=>document.getElementById(id);
 const store={get(k){try{return JSON.parse(localStorage.getItem('lrs2-'+k))}catch(e){return null}},set(k,v){try{localStorage.setItem('lrs2-'+k,JSON.stringify(v))}catch(e){}}};
-const st={...DEFAULTS};for(const k of Object.keys(DEFAULTS)){const v=store.get(k);if(v!==null&&v!==undefined)st[k]=v}
+const st={...DEFAULTS};for(const k of Object.keys(DEFAULTS)){if(k==='view'||k==='mode2')continue;   // always open on 3D, Latest
+  const v=store.get(k);if(v!==null&&v!==undefined)st[k]=v}
 function status(msg,err){const s=$('status');if(!msg){s.hidden=true;return}s.hidden=false;s.textContent=msg;s.classList.toggle('err',!!err)}
 const lon2x=lon=>lon*Math.PI/180*R_EARTH, lat2y=lat=>R_EARTH*Math.log(Math.tan(Math.PI/4+lat*Math.PI/360));
 const x2lon=x=>x/R_EARTH*180/Math.PI, y2lat=y=>(2*Math.atan(Math.exp(y/R_EARTH))-Math.PI/2)*180/Math.PI;
@@ -863,7 +864,7 @@ const D2=(()=>{
      Each copy is coloured by its own graphics filter (BoM pictures can't be read by the app, only drawn). Doppler wind stacks by
      wind speed instead (10 copies). Lower copies are drawn a bit darker so the sides of each tower show. */
   const NZ=15,NV=10;
-  const B3={on:false,failed:false,F:[],cur:0,tag:'',S:0,P:800,spin:false,h:store.get('b3h')??4,min:store.get('b3min')??0,
+  const B3={on:false,failed:false,F:[],cur:0,tag:'',S:0,P:800,spin:false,h:store.get('b3h1')??1,min:store.get('b3min')??0,
     cam:{tilt:52,bearing:-15,zoom:1,gx:0,gy:0}};
   const ZLOW=[12,23,28,31,34,37,40,43,46,49,52,55,58,61,64];    // lower edge (dBZ) of each BoM band
   const PRE=new Map();
@@ -917,14 +918,15 @@ const D2=(()=>{
     h+='<i class="me"></i>';
     $('b3g').innerHTML=h;
   }
-  function b3cam(){const c=B3.cam,tz=B3.P*(1-1/c.zoom);
-    $('b3w').style.transform=`translateZ(${tz.toFixed(1)}px) rotateX(${c.tilt.toFixed(2)}deg) rotateZ(${c.bearing.toFixed(2)}deg) translate(${c.gx.toFixed(1)}px,${c.gy.toFixed(1)}px)`}
+  function b3cam(){const c=B3.cam;
+    $('b3v').style.transform=`scale(${c.zoom.toFixed(4)})`;
+    $('b3w').style.transform=`rotateX(${c.tilt.toFixed(2)}deg) rotateZ(${c.bearing.toFixed(2)}deg) translate(${c.gx.toFixed(1)}px,${c.gy.toFixed(1)}px)`}
   function b3layout(){
     if(!B3.on)return;
     const hb=document.querySelector('header').getBoundingClientRect().bottom,dt=document.querySelector('.dock').getBoundingClientRect().top;
     const free=Math.max(160,dt-hb),cx=innerWidth/2,cy=hb+free*0.5;
     const S=Math.round(Math.min(innerWidth*0.96,free*1.7,900));
-    B3.P=Math.max(700,S*1.6);const v=$('b3v');v.style.perspective=B3.P+'px';v.style.perspectiveOrigin=`${cx}px ${cy}px`;
+    B3.P=Math.max(700,S*1.6);const v=$('b3v');v.style.perspective=B3.P+'px';v.style.perspectiveOrigin=`${cx}px ${cy}px`;v.style.transformOrigin=`${cx}px ${cy}px`;
     const w=$('b3w');w.style.left=(cx-S/2)+'px';w.style.top=(cy-S/2)+'px';w.style.width=w.style.height=S+'px';
     if(S!==B3.S){B3.S=S;b3ground();b3place()}b3cam();
   }
@@ -960,26 +962,26 @@ const D2=(()=>{
     const el=$('b3d'),pts=new Map();let last=null,lastTap=0;
     const pair=()=>{const[a,b]=[...pts.values()];return{d:Math.hypot(a.x-b.x,a.y-b.y),x:(a.x+b.x)/2,y:(a.y+b.y)/2}};
     const hint=()=>$('b3hint').classList.add('gone');
-    el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});b3stopSpin();
+    el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(_){}pts.set(e.pointerId,{x:e.clientX,y:e.clientY});b3stopSpin();
       last=pts.size===2?pair():null;
       if(pts.size===1){const now=Date.now();if(now-lastTap<300){b3reset();lastTap=0}else lastTap=now}});
     el.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;const c=B3.cam;
-      if(pts.size===1){c.bearing+=dx*0.35;c.tilt=Math.max(0,Math.min(80,c.tilt-dy*0.3));hint()}
-      else if(pts.size===2){const q=pair();if(last){c.zoom=Math.max(0.6,Math.min(3.4,c.zoom*q.d/Math.max(10,last.d)));
+      if(pts.size===1){c.bearing-=dx*0.35;c.tilt=Math.max(0,Math.min(80,c.tilt-dy*0.3));hint()}
+      else if(pts.size===2){const q=pair();if(last){c.zoom=Math.max(0.5,Math.min(60,c.zoom*q.d/Math.max(10,last.d)));
           let mx=(q.x-last.x)/c.zoom,my=(q.y-last.y)/c.zoom/Math.max(0.3,Math.cos(c.tilt*Math.PI/180));
           const r=-c.bearing*Math.PI/180;c.gx+=mx*Math.cos(r)-my*Math.sin(r);c.gy+=mx*Math.sin(r)+my*Math.cos(r);
           const lim=B3.S*0.6;c.gx=Math.max(-lim,Math.min(lim,c.gx));c.gy=Math.max(-lim,Math.min(lim,c.gy))}last=q;hint()}
       b3cam()});
     const up=e=>{pts.delete(e.pointerId);last=pts.size===2?pair():null};
     el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
-    el.addEventListener('wheel',e=>{e.preventDefault();B3.cam.zoom=Math.max(0.6,Math.min(3.4,B3.cam.zoom*Math.exp(-e.deltaY*0.0015)));b3cam();hint()},{passive:false});
+    el.addEventListener('wheel',e=>{e.preventDefault();B3.cam.zoom=Math.max(0.5,Math.min(60,B3.cam.zoom*Math.exp(-e.deltaY*0.0015)));b3cam();hint()},{passive:false});
     el.addEventListener('gesturestart',e=>e.preventDefault());
     addEventListener('resize',()=>b3layout());
     new ResizeObserver(()=>b3layout()).observe(document.querySelector('.dock'));
     setInterval(()=>{if(!document.hidden&&B3.on)b3load(false)},120e3);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden&&B3.on)b3load(false)});
   })();
-  $('b3h').value=B3.h;$('b3hv').textContent=B3.h;$('b3h').oninput=()=>{B3.h=+$('b3h').value;$('b3hv').textContent=B3.h;store.set('b3h',B3.h);b3place()};
+  $('b3h').value=B3.h;$('b3hv').textContent=B3.h;$('b3h').oninput=()=>{B3.h=+$('b3h').value;$('b3hv').textContent=B3.h;store.set('b3h1',B3.h);b3place()};
   $('b3min').value=B3.min;$('b3minv').textContent=ZLOW[B3.min];
   $('b3min').oninput=()=>{B3.min=+$('b3min').value;$('b3minv').textContent=ZLOW[B3.min];store.set('b3min',B3.min);clearTimeout(B3.mt);B3.mt=setTimeout(b3filters,120)};
   $('b3reset').onclick=()=>b3reset();
@@ -1085,7 +1087,7 @@ $('sitesBtn').onclick=()=>{if(st.view==='2d'){$('sitesBtn').setAttribute('aria-p
   showSites(on)};
 const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style();if(D2.b3.active())D2.b3.ground()};
 
-st.mode=st.mode2||'now';setMode(st.mode);
+st.mode='now';setMode('now');
 if(st.view==='2d')map.once('idle',()=>setView('2d'));
 function labelZoom(){$('map').classList.toggle('far',map.getZoom()<5.6)}
 map.on('zoomend',labelZoom);map.on('load',labelZoom);
