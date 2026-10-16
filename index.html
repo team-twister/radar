@@ -219,6 +219,7 @@ body.now .frames{display:none!important}
     <div class="only2d" style="display:grid;gap:10px">
       <div id="zKey2d"><div class="bands" id="bands"></div><div class="ticks"><span>12</span><span>23</span><span>31</span><span>37</span><span>43</span><span>49</span><span>55</span><span>61</span><span>64+ dBZ</span></div></div>
       <div class="vkey" id="vKey2d" hidden><span id="vKeyText">BoM Doppler wind · 128 km around the radar</span><button id="keyBtn">Colour key</button></div>
+      <div class="row"><label for="src2d">Reflectivity</label><select id="src2d"><option value="bom">BoM (sharper, every 5 min)</option><option value="rv">RainViewer (every 10 min)</option></select><span></span></div>
       <div class="row"><label for="range2d">Area</label><select id="range2d"><option value="64">64 km around the radar</option><option value="128" selected>128 km around the radar</option><option value="256">256 km around the radar</option><option value="nat">All of Australia</option></select><span></span></div>
       <div class="row"><label for="frames2d">Loop length</label><select id="frames2d"><option value="6">30 min</option><option value="12" selected>1 hour</option><option value="24">2 hours</option></select><span></span></div>
       <div class="row"><label for="op2d">Radar opacity</label><input id="op2d" type="range" min="20" max="100" value="85"><output id="op2dv">85%</output></div>
@@ -608,7 +609,7 @@ const D2=(()=>{
   const tileURL=(z,row,col,t)=>`${WMTS}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${LAYER}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=GoogleMapsCompatible_BoM&TILEMATRIX=${z}&TILEROW=${row}&TILECOL=${col}&time=${t}`;
   function look(url,timeout=6000){return new Promise(res=>{const im=new Image();im.referrerPolicy='no-referrer';const t=setTimeout(()=>{im.src='';res(false)},timeout);
     im.onload=()=>{clearTimeout(t);res(true)};im.onerror=()=>{clearTimeout(t);res(false)};im.src=url})}
-  const o2={product:'z',range:store.get('range2d')||'128',rs:store.get('rs2d')!==false,frames:store.get('frames2d')||12,op:store.get('op2d')||85,speed:store.get('speed')||3,ring:store.get('ring2d')!==false};
+  const o2={product:'z',src:store.get('src2d')||'bom',range:store.get('range2d')||'128',rs:store.get('rs2d')!==false,frames:store.get('frames2d')||12,op:store.get('op2d')||85,speed:store.get('speed')||3,ring:store.get('ring2d')!==false};
   const LETTER={'64':'4','128':'3','256':'2'};
   /* RadarScope colours: the phone's graphics filter swaps BoM's 15 colours while drawing. Step 1 turns each BoM colour into one
      unique brightness (s = -0.5R + 0.375G + 0.125B + 0.5); step 2 looks that brightness up in a table of RadarScope colours. */
@@ -650,8 +651,30 @@ const D2=(()=>{
     if(!o||col<0||row<0||col>=o.w||row>=o.h){setTimeout(()=>done(null,t),0);return t}
     t.style.marginLeft=o.sx+'px';t.style.marginTop=o.sy+'px';t.onload=()=>done(null,t);t.onerror=()=>{t.style.visibility='hidden';done(null,t)};
     t.src=tileURL(c.z,row,col,this.options.time);return t}});
+  const RVTiles=L.GridLayer.extend({createTile(c,done){const cv=document.createElement('canvas');cv.width=cv.height=256;
+    const z=Math.min(c.z,7),k=2**(c.z-z),x=Math.floor(c.x/k),y=Math.floor(c.y/k),ox=(c.x-x*k)*256/k,oy=(c.y-y*k)*256/k;
+    const im=new Image();im.crossOrigin='anonymous';
+    im.onload=()=>{const ctx=cv.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=false;ctx.drawImage(im,ox,oy,256/k,256/k,0,0,256,256);
+      if(o2.rs){try{const d=ctx.getImageData(0,0,256,256),p=d.data,lut=SOURCES.rv.lut();
+        for(let i=0;i<p.length;i+=4){if(p[i+3]<128){p[i+3]=0;continue}const v=lut[((p[i]>>3)<<10)|((p[i+1]>>3)<<5)|(p[i+2]>>3)];
+          if(v<10){p[i+3]=0;continue}const q=RSLUT[Math.min(80,v)];p[i]=q[0];p[i+1]=q[1];p[i+2]=q[2];p[i+3]=255}
+        ctx.putImageData(d,0,0)}catch(e){}}
+      done(null,cv)};
+    im.onerror=()=>done(null,cv);
+    im.src=`${SOURCES.rv.host}${this.options.path}/256/${z}/${x}/${y}/2/0_0.png`;return cv}});
+  const RSLUT=Array.from({length:81},(_,v)=>col(v).map(Math.round));
+  async function loadRV(){
+    if(zF.kind!=='rv'){for(const f of zF)map2.removeLayer(f.layer);zF.length=0;zF.kind='rv';zF.tag=''}
+    let list;try{list=await SOURCES.rv.times(o2.frames)}catch(e){status("RainViewer didn't answer. Check your internet and tap Refresh.",true);return false}
+    if(!list.length){status('RainViewer has no frames right now.',true);return false}
+    const keep=new Map(zF.map(f=>[f.t,f])),want=new Set(list.map(f=>f.time*1000));
+    for(const f of zF)if(!want.has(f.t))map2.removeLayer(f.layer);
+    const next=list.map(f=>keep.get(f.time*1000)||{t:f.time*1000,layer:new RVTiles({path:f.key,pane:'radar',opacity:0,maxZoom:11,updateWhenZooming:false,keepBuffer:1})});
+    zF.length=0;zF.push(...next);zF.forEach(f=>{if(!map2.hasLayer(f.layer))f.layer.addTo(map2)});status(null);return true;
+  }
   async function latestZ(){let t=Math.floor((Date.now()-8*60e3)/3e5)*3e5;for(let k=0;k<10;k++){if(await look(tileURL(0,0,0,isoT(new Date(t)))))return t;t-=3e5}return null}
   async function loadZ(){
+    if(o2.src==='rv')return loadRV();
     if(o2.range!=='nat'){if(zF.kind!=='pic'){for(const f of zF)map2.removeLayer(f.layer);zF.length=0;zF.kind='pic'}
       return loadPics(zF,LETTER[o2.range],+o2.range,'reflectivity')}
     if(zF.kind!=='nat'){for(const f of zF)map2.removeLayer(f.layer);zF.length=0;zF.kind='nat';zF.tag=''}
@@ -700,11 +723,12 @@ const D2=(()=>{
     if(full||atEnd)show(F().length-1);else show(cur);
   }
   function head(){
-    if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · ${o2.product==='z'?(o2.range==='nat'?'BoM reflectivity, all of Australia':`reflectivity ${o2.range} km`):'Doppler wind 128 km'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
+    if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · ${o2.product==='z'?(o2.src==='rv'?'RainViewer reflectivity':o2.range==='nat'?'BoM reflectivity, all of Australia':`BoM reflectivity ${o2.range} km`):'Doppler wind 128 km'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
     $('pZ').setAttribute('aria-pressed',o2.product==='z');$('pV').setAttribute('aria-pressed',o2.product==='v');$('pV').disabled=!(site&&site.doppler);
     $('zKey2d').hidden=o2.product!=='z';$('vKey2d').hidden=o2.product!=='v';
-    $('map2d').classList.toggle('rs',o2.rs&&o2.product==='z');
-    const km=o2.product==='v'?RKM:(o2.range==='nat'?0:+o2.range);
+    $('map2d').classList.toggle('rs',o2.rs&&o2.product==='z'&&o2.src==='bom');
+    $('range2d').disabled=o2.src==='rv';
+    const km=o2.product==='v'?RKM:(o2.range==='nat'||o2.src==='rv'?0:+o2.range);
     ringL.setLatLng(site?[site.lat,site.lon]:[0,0]);ringL.setRadius((km||RKM)*1000);if(o2.ring&&site&&km)ringL.addTo(map2);else map2.removeLayer(ringL);
   }
   function drawMarkers(){markers.forEach(m=>map2.removeLayer(m));markers=[];
@@ -731,12 +755,13 @@ const D2=(()=>{
     setFrames(n){o2.frames=n;store.set('frames2d',n);refresh(true)},
     setRange(r){o2.range=r;store.set('range2d',r);if(o2.product==='v'){o2.product='z'}head();
       if(r!=='nat'&&site)fitTo(vBounds(site,+r),true);else if(r==='nat')fitTo([[-44,112],[-10,154]],true);refresh(true)},
-    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();head();return o2.rs},
+    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();head();if(o2.src==='rv')zF.forEach(f=>f.layer.redraw());return o2.rs},
+    setSrc(v){o2.src=v;store.set('src2d',v);if(o2.product==='v')o2.product='z';head();refresh(true)},
     setOp(v){o2.op=v;store.set('op2d',v);show(cur)},
     toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();return o2.ring},
     aus(){this.setRange('nat');$('range2d').value='nat'},
     refreshNow(){vCache.clear();refresh(true)},
-    keyURL:()=>site?`${BOM}/radar/IDR${String(site.id).padStart(2,'0')}I.gif?${Date.now()}`:'',
+    keyURL:()=>site?`${BOM}/radar/IDR${String(site.id).padStart(2,'0')}I.gif`:'',
     locate(ll){const n=nearest(ll[0],ll[1],sites.filter(s=>s.doppler));if(n)pick(n[0],false);
       if(this._me)map2.removeLayer(this._me);this._me=L.marker(ll,{icon:L.divIcon({className:'',html:'<div class="me2d"></div>',iconAnchor:[10,10]}),interactive:false}).addTo(map2);map2.flyTo(ll,8.5,{duration:1})},
     o2,
@@ -765,9 +790,10 @@ $('op2d').value=D2.o2.op;$('op2dv').textContent=D2.o2.op+'%';$('op2d').oninput=(
 $('speed').value=D2.o2.speed;$('speedv').textContent=D2.o2.speed;$('speed').oninput=()=>{D2.o2.speed=+$('speed').value;$('speedv').textContent=D2.o2.speed;store.set('speed',D2.o2.speed)};
 $('ring2d').setAttribute('aria-pressed',D2.o2.ring);$('ring2d').onclick=()=>$('ring2d').setAttribute('aria-pressed',D2.toggleRing());
 $('aus2d').onclick=()=>D2.aus();
+$('src2d').value=D2.o2.src;$('src2d').onchange=()=>D2.setSrc($('src2d').value);
 $('range2d').value=D2.o2.range;$('range2d').onchange=()=>D2.setRange($('range2d').value);
 $('rs2d').setAttribute('aria-pressed',D2.o2.rs);$('rs2d').onclick=()=>$('rs2d').setAttribute('aria-pressed',D2.toggleRS());$('refresh2d').onclick=()=>D2.refreshNow();
-$('keyBtn').onclick=()=>{const u=D2.keyURL();if(!u)return;$('keyImg').referrerPolicy='no-referrer';$('keyImg').src=u;$('keySheet').hidden=false};
+$('keyBtn').onclick=()=>{const u=D2.keyURL();if(!u)return;const im=$('keyImg');im.referrerPolicy='no-referrer';im.removeAttribute('src');im.onerror=()=>{im.alt='BoM did not send its colour key image. Try again in a minute.'};im.src=u;$('keySheet').hidden=false};
 $('keyClose').onclick=()=>{$('keySheet').hidden=true};
 $('loc2d').onclick=()=>{if(!navigator.geolocation){status('This browser cannot share your location.',true);return}
   status('Finding your location…');navigator.geolocation.getCurrentPosition(p=>{status(null);D2.locate([p.coords.latitude,p.coords.longitude])},()=>status('Location was not shared.',true),{timeout:10000})};
