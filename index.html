@@ -172,6 +172,14 @@ body.now .frames{display:none!important}
     <feColorMatrix id="rsZm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
     <feComponentTransfer><feFuncR id="rsZr" type="discrete" tableValues="0"/><feFuncG id="rsZg" type="discrete" tableValues="0"/><feFuncB id="rsZb" type="discrete" tableValues="0"/></feComponentTransfer>
   </filter>
+  <filter id="rsZc" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+    <feColorMatrix id="rsZcm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+    <feComponentTransfer><feFuncR id="rsZcr" type="discrete" tableValues="0"/><feFuncG id="rsZcg" type="discrete" tableValues="0"/><feFuncB id="rsZcb" type="discrete" tableValues="0"/></feComponentTransfer>
+  </filter>
+  <filter id="rsVc" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+    <feColorMatrix id="rsVcm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+    <feComponentTransfer><feFuncR id="rsVcr" type="discrete" tableValues="0"/><feFuncG id="rsVcg" type="discrete" tableValues="0"/><feFuncB id="rsVcb" type="discrete" tableValues="0"/></feComponentTransfer>
+  </filter>
   <clipPath id="bomTrim" clipPathUnits="userSpaceOnUse"><rect x="0" y="18.5" width="512" height="468"/></clipPath>
   <filter id="rsV" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
     <feColorMatrix id="rsVm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
@@ -627,13 +635,13 @@ const D2=(()=>{
       const c=target(k).map(v=>Math.round(v)/255);tr.push(c[0].toFixed(3));tg.push(c[1].toFixed(3));tb.push(c[2].toFixed(3))}
     document.getElementById(id+'r').setAttribute('tableValues',tr.join(' '));document.getElementById(id+'g').setAttribute('tableValues',tg.join(' '));document.getElementById(id+'b').setAttribute('tableValues',tb.join(' '));
   }
-  buildFilter('rsZ',W,BANDS,k=>col(ZMID[k]));
+  buildFilter('rsZ',W,BANDS,k=>col(ZMID[k]));buildFilter('rsZc',W,BANDS,k=>col(ZMID[k]));
   /* BoM Doppler wind: 9 blues toward the radar (darkest = fastest), white near zero, 9 yellows to reds away (red = fastest).
      Repainted RadarScope style: greens toward, reds away, grey near zero. */
   const VPAL=[[0,0,100],[17,30,120],[32,57,138],[45,80,154],[59,107,172],[74,133,190],[89,160,208],[102,183,224],[117,210,242],[255,255,255],[255,234,0],[255,206,0],[255,182,0],[255,154,0],[255,126,0],[255,98,0],[255,73,0],[255,45,0],[255,0,0]];
   const VST2=[[-9,[200,255,200]],[-6.5,[0,255,60]],[-3.3,[0,150,40]],[-0.8,[60,90,65]],[0,[110,110,110]],[0.8,[95,60,60]],[3.3,[170,0,20]],[6.5,[255,30,60]],[9,[255,200,170]]];
   const vcol=k=>{const v=k-9;if(v<=VST2[0][0])return VST2[0][1];for(let i=1;i<VST2.length;i++){const[a,ca]=VST2[i-1],[b,cb]=VST2[i];if(v<=b){const t=(v-a)/(b-a);return ca.map((x,j)=>x+(cb[j]-x)*t)}}return VST2.at(-1)[1]};
-  buildFilter('rsV',[-0.25,0.375,-1,0.875],VPAL,vcol);
+  buildFilter('rsV',[-0.25,0.375,-1,0.875],VPAL,vcol);buildFilter('rsVc',[-0.25,0.375,-1,0.875],VPAL,vcol);
   function drawVbar(){const el=$('vbar');el.innerHTML='';VPAL.forEach((c,k)=>{const i=document.createElement('i');i.style.background=`rgb(${(o2.rs?vcol(k):c).map(Math.round)})`;el.appendChild(i)})}
   function drawBands(){const el=$('bands');el.innerHTML='';BANDS.forEach(([r,g,b],k)=>{const i=document.createElement('i');i.style.background=o2.rs?hex(ZMID[k]):`rgb(${r},${g},${b})`;el.appendChild(i)})}
   let map2=null,base=null,satL=null,labL=null,ringL=null,sites=[],site=null,zF=[],vF=[],cur=0,vCache=new Map(),markers=[],sitesOn=false,ready=null,timer=null;
@@ -662,22 +670,22 @@ const D2=(()=>{
   function style(){if(!map2)return;if(st.dark){map2.removeLayer(satL);map2.removeLayer(labL);base.addTo(map2)}else{map2.removeLayer(base);satL.addTo(map2);labL.addTo(map2)}}
   const NS='http://www.w3.org/2000/svg';
   const PICS=new Set();   // every BoM picture element, so the colour switch can update them all
-  function picFilter(kind){return o2.rs?(kind==='v'?'url(#rsV)':'url(#rsZ)'):null}
+  function picFilter(kind,crop){return o2.rs?`url(#rs${kind==='v'?'V':'Z'}${crop?'c':''})`:null}
   function svgPic(url,size,kind,trim,onload,onerror){
     const svg=document.createElementNS(NS,'svg');svg.setAttribute('viewBox',`0 0 ${size} ${size}`);svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','bompic');
     const im=document.createElementNS(NS,'image');im.setAttribute('width',size);im.setAttribute('height',size);im.setAttribute('preserveAspectRatio','none');
     if(trim)im.setAttribute('clip-path','url(#bomTrim)');
-    im.dataset.kind=kind;const f=picFilter(kind);if(f)im.setAttribute('filter',f);
+    im.dataset.kind=kind;if(trim)im.dataset.crop='1';const f=picFilter(kind,trim);if(f)im.setAttribute('filter',f);
     if(onload)im.addEventListener('load',onload);if(onerror)im.addEventListener('error',onerror);
     im.setAttribute('href',url);svg.appendChild(im);PICS.add(im);return svg}
-  function refilter(){for(const im of PICS){if(!im.isConnected){PICS.delete(im);continue}const f=picFilter(im.dataset.kind);if(f)im.setAttribute('filter',f);else im.removeAttribute('filter')}}
+  function refilter(){for(const im of PICS){if(!im.isConnected){PICS.delete(im);continue}const f=picFilter(im.dataset.kind,im.dataset.crop);if(f)im.setAttribute('filter',f);else im.removeAttribute('filter')}}
   /* Safari gives up on colour filters bigger than ~16 million screen pixels, and zoomed in a whole radar picture is far bigger.
      So this layer only ever draws the slice of the picture that's on screen (plus a margin), cropped with the SVG viewBox. */
   const CropPic=L.Layer.extend({
     initialize(url,bounds,kind,opts){this._url=url;this._b=L.latLngBounds(bounds);this._kind=kind;L.setOptions(this,opts)},
     onAdd(map){this._svg=svgPic(this._url,512,this._kind,true);this._svg.style.position='absolute';this._svg.style.visibility='hidden';
-      this.getPane().appendChild(this._svg);map.on('moveend zoomend resize viewreset',this.update,this);this.update()},
-    onRemove(map){map.off('moveend zoomend resize viewreset',this.update,this);L.DomUtil.remove(this._svg);PICS.delete(this._svg.firstChild)},
+      this.getPane().appendChild(this._svg);this._raf=()=>{if(this._q)return;this._q=requestAnimationFrame(()=>{this._q=0;this.update()})};map.on('zoom move moveend zoomend resize viewreset',this._raf,this);this.update()},
+    onRemove(map){map.off('zoom move moveend zoomend resize viewreset',this._raf,this);L.DomUtil.remove(this._svg);PICS.delete(this._svg.firstChild)},
     getElement(){return this._svg},
     setOpacity(o){if(this._svg)this._svg.style.opacity=o>=1?'':o},
     update(){const m=this._map,svg=this._svg;if(!m||!svg||svg.style.visibility==='hidden')return;
@@ -686,7 +694,10 @@ const D2=(()=>{
       const x0=Math.max(nw.x,a.x),y0=Math.max(nw.y,a.y),x1=Math.min(se.x,b.x),y1=Math.min(se.y,b.y);
       if(x1<=x0||y1<=y0||W<=0){svg.style.display='none';return}svg.style.display='';
       L.DomUtil.setPosition(svg,L.point(x0,y0));svg.setAttribute('width',x1-x0);svg.setAttribute('height',y1-y0);svg.style.width=(x1-x0)+'px';svg.style.height=(y1-y0)+'px';
-      svg.setAttribute('viewBox',`${(x0-nw.x)/W*512} ${(y0-nw.y)/H*512} ${(x1-x0)/W*512} ${(y1-y0)/H*512}`)}
+      const vx=(x0-nw.x)/W*512,vy=(y0-nw.y)/H*512,vw=(x1-x0)/W*512,vh=(y1-y0)/H*512;
+      svg.setAttribute('viewBox',`${vx} ${vy} ${vw} ${vh}`);
+      const f=document.getElementById(this._kind==='v'?'rsVc':'rsZc');   // only one picture of each kind is on screen at a time
+      if(f){f.setAttribute('x',vx-2);f.setAttribute('y',vy-2);f.setAttribute('width',vw+4);f.setAttribute('height',vh+4)}}
   });
   const Tiles=L.GridLayer.extend({createTile(c,done){const o=offset(c.z);
     const col=o?c.x-o.xo:-1,row=o?c.y-o.yo:-1;
@@ -742,7 +753,7 @@ const D2=(()=>{
     if(arr.tag!==tag){for(const f of arr)map2.removeLayer(f.layer);arr.length=0;arr.tag=tag}
     if(!arr.length)status(`Finding ${site.name} ${what}…`);
     const list=await findF(site,letter);
-    if(!list.length){status(`No ${what} from ${site.name} in the last ${o2.frames*5} min. The radar may be offline.`,true);return false}
+    if(!list.length){status(`BoM hasn't published ${what} for ${site.name} in the last ${o2.frames*5} min, so the radar may be down. Compare with bom.gov.au/products/IDR${String(site.id).padStart(2,'0')}${letter}.loop.shtml`,true);return false}
     const b=vBounds(site,km),have=new Map(arr.map(f=>[f.t,f])),wantT=new Set(list.map(([t])=>t));
     for(const f of arr)if(!wantT.has(f.t))map2.removeLayer(f.layer);
     const kind=letter==='I'?'v':'z';
@@ -796,7 +807,7 @@ const D2=(()=>{
     leave(){$('map2d').hidden=true;return map2?{c:map2.getCenter(),z:map2.getZoom(),site}:null},
     toggleSites(){sitesOn=!sitesOn;if(sitesOn&&map2.getZoom()>6.5)map2.flyTo(map2.getCenter(),5.5,{duration:.8});drawMarkers();return sitesOn},
     style,setProduct,show,refresh,
-    frames:()=>F(),cur:()=>cur,
+    frames:()=>F(),cur:()=>cur,map:()=>map2,
     setFrames(n){o2.frames=n;store.set('frames2d',n);refresh(true)},
     setRange(r){o2.range=r;store.set('range2d',r);if(o2.product==='v'){o2.product='z'}head();
       if(r!=='nat'&&site)fitTo(vBounds(site,+r),true);else if(r==='nat')fitTo([[-44,112],[-10,154]],true);refresh(true)},
