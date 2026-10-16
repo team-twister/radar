@@ -684,8 +684,15 @@ const D2=(()=>{
   const CropPic=L.Layer.extend({
     initialize(url,bounds,kind,opts){this._url=url;this._b=L.latLngBounds(bounds);this._kind=kind;L.setOptions(this,opts)},
     onAdd(map){this._svg=svgPic(this._url,512,this._kind,true);this._svg.style.position='absolute';this._svg.style.visibility='hidden';
-      this.getPane().appendChild(this._svg);this._raf=()=>{if(this._q)return;this._q=requestAnimationFrame(()=>{this._q=0;this.update()})};map.on('zoom move moveend zoomend resize viewreset',this._raf,this);this.update()},
-    onRemove(map){map.off('zoom move moveend zoomend resize viewreset',this._raf,this);L.DomUtil.remove(this._svg);PICS.delete(this._svg.firstChild)},
+      this._svg.style.transformOrigin='0 0';this._svg.style.willChange='transform';
+      this.getPane().appendChild(this._svg);
+      // while fingers are moving: just stretch the picture already drawn (cheap). When they let go: re-cut and re-colour once.
+      this._raf=()=>{if(this._q)return;this._q=requestAnimationFrame(()=>{this._q=0;this.stretch()})};
+      map.on('zoom',this._raf,this);map.on('moveend zoomend resize viewreset',this.update,this);this.update()},
+    onRemove(map){map.off('zoom',this._raf,this);map.off('moveend zoomend resize viewreset',this.update,this);L.DomUtil.remove(this._svg);PICS.delete(this._svg.firstChild)},
+    stretch(){const m=this._map,svg=this._svg;if(!m||!svg||!this._ll||svg.style.visibility==='hidden'||svg.style.display==='none')return;
+      const p0=m.latLngToLayerPoint(this._ll.getNorthWest()),p1=m.latLngToLayerPoint(this._ll.getSouthEast());
+      L.DomUtil.setTransform(svg,p0,(p1.x-p0.x)/this._w)},
     getElement(){return this._svg},
     setOpacity(o){if(this._svg)this._svg.style.opacity=o>=1?'':o},
     update(){const m=this._map,svg=this._svg;if(!m||!svg||svg.style.visibility==='hidden')return;
@@ -693,6 +700,7 @@ const D2=(()=>{
       const sz=m.getSize(),mx=sz.x*0.2,my=sz.y*0.2,a=m.containerPointToLayerPoint([-mx,-my]),b=m.containerPointToLayerPoint([sz.x+mx,sz.y+my]);
       const x0=Math.max(nw.x,a.x),y0=Math.max(nw.y,a.y),x1=Math.min(se.x,b.x),y1=Math.min(se.y,b.y);
       if(x1<=x0||y1<=y0||W<=0){svg.style.display='none';return}svg.style.display='';
+      this._ll=L.latLngBounds(m.layerPointToLatLng([x0,y0]),m.layerPointToLatLng([x1,y1]));this._w=x1-x0;
       L.DomUtil.setPosition(svg,L.point(x0,y0));svg.setAttribute('width',x1-x0);svg.setAttribute('height',y1-y0);svg.style.width=(x1-x0)+'px';svg.style.height=(y1-y0)+'px';
       const vx=(x0-nw.x)/W*512,vy=(y0-nw.y)/H*512,vw=(x1-x0)/W*512,vh=(y1-y0)/H*512;
       svg.setAttribute('viewBox',`${vx} ${vy} ${vw} ${vh}`);
