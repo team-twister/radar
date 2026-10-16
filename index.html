@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#06090d">
 <title>Live Radar Stack</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* Layout: full-screen map; slim header top; tool buttons top-right; collapsible control dock at the bottom */
 :root{
@@ -122,10 +123,45 @@ h1 #hName{min-width:0;white-space:nowrap}
 .btns button[aria-pressed="true"]{background:var(--accent);color:#000}
 .credit,.keyrow{font-size:.7rem}
 .site span{font:600 11px var(--ui)}
+/* ---- 2D / 3D sections ---- */
+#map2d{position:fixed;inset:0;z-index:0;background:#0b0f14}
+#map2d .leaflet-control-attribution{background:rgba(0,0,0,.55);color:#aaa;font-size:9px}
+#map2d .leaflet-control-attribution a{color:#ccc}
+#map2d .leaflet-control-zoom{display:none}
+body.v2d #map{visibility:hidden}
+body.v2d .only3d,body:not(.v2d) .only2d{display:none!important}
+.dock-head{flex-wrap:wrap}
+.seg.vsw{flex:0 0 auto}
+.seg.vsw button{padding:7px 14px;font-weight:700}
+.timebar{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:8px;align-items:center;max-width:700px;margin:0 auto;padding:0 max(12px,env(safe-area-inset-left,0px)) 10px}
+.timebar button{font:600 .78rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:8px;padding:6px 10px;cursor:pointer;min-width:36px}
+.timebar button[aria-pressed="true"]{background:var(--accent);color:#000}
+.timebar output{font:600 .8rem var(--ui);color:var(--accent);min-width:4.4rem;text-align:right;font-variant-numeric:tabular-nums}
+.timebar output.old{color:var(--warn)}
+body:not(.v2d):not(.now) .timebar{display:none}
+body.now .frames{display:none!important}
+.bands{display:flex;height:9px;overflow:hidden;border-radius:1px}
+.bands i{flex:1}
+.vkey{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.74rem;color:var(--muted)}
+.vkey button{font:600 .74rem var(--ui);color:var(--accent);background:var(--fill);border:0;border-radius:7px;padding:5px 9px;cursor:pointer}
+.mark2d{display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer}
+.mark2d i{flex:none;width:11px;height:11px;transform:rotate(45deg);background:#0b1118;border:2px solid #e5e5ea;display:block}
+.mark2d.dop i{border-color:var(--accent)}
+.mark2d span{font:600 11px var(--ui);color:#fff;text-shadow:0 1px 2px #000,0 0 4px #000}
+.mark2d.active i{background:var(--live);border-color:#fff}
+.mark2d.active span{color:#ff8a80}
+#map2d.far .mark2d:not(.active) span{display:none}
+.me2d{width:14px;height:14px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+.keysheet{position:fixed;z-index:20;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.65);padding:16px}
+.keysheet .card{background:#1c1c1e;border-radius:16px;padding:14px;max-width:560px;width:100%;display:grid;gap:10px}
+.keysheet img{width:100%;height:auto;border-radius:8px;background:#000}
+.keysheet p{margin:0;color:var(--muted);font-size:.84rem;line-height:1.45}
+.keysheet button{font:600 .9rem var(--ui);color:#000;background:var(--accent);border:0;border-radius:11px;padding:11px;cursor:pointer}
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="map2d" hidden></div>
 <header>
   <div class="brand">
     <h1><i class="dot" aria-hidden="true"></i><span class="code">LIVE</span> <span id="hName">Radar Stack</span></h1>
@@ -138,44 +174,82 @@ h1 #hName{min-width:0;white-space:nowrap}
   </div>
 </header>
 <div class="status" id="status" hidden></div>
+<div class="keysheet" id="keySheet" hidden>
+  <div class="card">
+    <img id="keyImg" alt="Latest Doppler wind image from the Bureau of Meteorology, with its colour key">
+    <p>BoM's own latest Doppler wind image, with its colour key. Doppler wind is wind blowing toward or away from the radar, not the true wind direction. A tight patch where the two colour families sit side by side is rotation.</p>
+    <button id="keyClose">Done</button>
+  </div>
+</div>
 
 <div class="dock">
   <div class="dock-head">
-    <div class="seg" role="group" aria-label="Display mode">
+    <div class="seg vsw" role="group" aria-label="2D or 3D">
+      <button id="v2d" aria-pressed="false">2D</button>
+      <button id="v3d" aria-pressed="true">3D</button>
+    </div>
+    <div class="seg only2d" role="group" aria-label="Product">
+      <button id="pZ" aria-pressed="true">Reflectivity</button>
+      <button id="pV" aria-pressed="false">Velocity</button>
+    </div>
+    <div class="seg only3d" role="group" aria-label="Display mode">
       <button id="modeSep" aria-pressed="false">Separated</button>
       <button id="mode3d" aria-pressed="true">3D stack</button>
       <button id="modeNow" aria-pressed="false">Latest</button>
     </div>
     <button class="fold" id="fold" aria-expanded="true">Hide</button>
   </div>
+  <div class="timebar" id="timebar">
+    <button id="prev" aria-label="Previous frame">◀</button>
+    <input id="time" type="range" min="0" max="0" value="0" aria-label="Frame">
+    <button id="next" aria-label="Next frame">▶</button>
+    <output id="tlabel">–</output>
+    <button id="play" aria-pressed="false">Play</button>
+  </div>
   <div class="dock-body" id="dockBody">
-    <div class="frames" id="frames" aria-label="Radar frames; tap to hide or show one"></div>
-    <div class="row"><label for="gap">Layer gap</label><input id="gap" type="range" min="0" max="10" step="0.5" value="1"><output id="gapv">1</output></div>
-    <div class="row"><label for="min">Min dBZ</label><input id="min" type="range" min="10" max="55" value="14"><output id="minv">14</output></div>
-    <div class="row"><label for="float">Float height</label><input id="float" type="range" min="0" max="20" value="6"><output id="floatv">6</output></div>
-    <div class="row"><label for="count">Frames</label><select id="count"><option value="6">6</option><option value="12" selected>12</option><option value="18">18</option></select><span></span></div>
-    <div>
+    <div class="only2d" style="display:grid;gap:10px">
+      <div id="zKey2d"><div class="bands" id="bands"></div><div class="ticks"><span>12</span><span>23</span><span>31</span><span>37</span><span>43</span><span>49</span><span>55</span><span>61</span><span>64+ dBZ</span></div></div>
+      <div class="vkey" id="vKey2d" hidden><span id="vKeyText">BoM Doppler wind · 128 km around the radar</span><button id="keyBtn">Colour key</button></div>
+      <div class="row"><label for="frames2d">Loop length</label><select id="frames2d"><option value="6">30 min</option><option value="12" selected>1 hour</option><option value="24">2 hours</option></select><span></span></div>
+      <div class="row"><label for="op2d">Radar opacity</label><input id="op2d" type="range" min="20" max="100" value="85"><output id="op2dv">85%</output></div>
+      <div class="row"><label for="speed">Loop speed</label><input id="speed" type="range" min="1" max="5" value="3"><output id="speedv">3</output></div>
+      <div class="btns">
+        <button id="ring2d" aria-pressed="true">Range ring</button>
+        <button id="loc2d">My location</button>
+        <button id="aus2d">All of Australia</button>
+        <button id="refresh2d">Refresh now</button>
+      </div>
+      <div class="credit">2D is BoM's own live radar: reflectivity every 5 minutes for all of Australia, and Doppler wind about every 5 minutes within 128 km of a Doppler radar (blue diamonds). Radar © Commonwealth of Australia, Bureau of Meteorology, personal use only.</div>
+    </div>
+    <div class="frames only3d" id="frames" aria-label="Radar frames; tap to hide or show one"></div>
+    <div class="row only3d"><label for="gap">Layer gap</label><input id="gap" type="range" min="0" max="10" step="0.5" value="1"><output id="gapv">1</output></div>
+    <div class="row only3d"><label for="min">Min dBZ</label><input id="min" type="range" min="10" max="55" value="14"><output id="minv">14</output></div>
+    <div class="row only3d"><label for="float">Float height</label><input id="float" type="range" min="0" max="20" value="6"><output id="floatv">6</output></div>
+    <div class="row only3d"><label for="count">Frames</label><select id="count"><option value="6">6</option><option value="12" selected>12</option><option value="18">18</option></select><span></span></div>
+    <div class="only3d">
       <div class="scale" id="scale"></div>
       <div class="ticks"><span>15</span><span>25</span><span>35</span><span>45</span><span>55</span><span>65 dBZ</span></div>
     </div>
-    <div class="btns">
+    <div class="btns only3d">
       <button id="smooth" aria-pressed="true">Smooth storms</button>
       <button id="spin" aria-pressed="false">Auto-rotate</button>
       <button id="reset">Reset view</button>
       <button id="aus">All of Australia</button>
       <button id="refresh">Refresh now</button>
     </div>
-    <div class="keyrow"><span><i class="d"></i>Doppler radar</span><span><i></i>Rain-only radar</span></div>
-    <div class="credit" id="credit">Each layer is one radar frame, oldest at the bottom. Radar © Commonwealth of Australia, Bureau of Meteorology. Personal use only.</div>
+    <div class="keyrow only3d"><span><i class="d"></i>Doppler radar</span><span><i></i>Rain-only radar</span></div>
+    <div class="credit only3d" id="credit">Each layer is one radar frame, oldest at the bottom. Radar © Commonwealth of Australia, Bureau of Meteorology. Personal use only.</div>
   </div>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="archive.js"></script>
 <script>
 /* ================= settings ================= */
 const HALF=20037508.342789244, WORLD=HALF*2, R_EARTH=6378137;
 const RANGE_KM=256;
-const DEFAULTS={mode:'3d',gap:1,min:14,float:6,count:12,dark:false,smooth:true,site:'Brisbane (Mt Stapylton)'};
+const DEFAULTS={view:'3d',mode2:'now',gap:1,min:14,float:6,count:12,dark:false,smooth:true,site:'Brisbane (Mt Stapylton)'};
 const VX=4;                   // vertical exaggeration so layers read at map scale
 const GAP_UNIT=2500*VX;       // metres of height per "layer gap" step
 const MAX_H=14000*VX;         // tallest block in 3D stack / latest mode (metres)
@@ -280,7 +354,7 @@ const map=new maplibregl.Map({
   pitch:0,maxPitch:75,attributionControl:{compact:true}
 });
 
-let rawByFrame=[],cleanByFrame=[],siteMarkers=[],activeSite=null,frames=[],frameOn=[],cellsByFrame=[],grid=null,busy=false,lastKey='',spinning=false,currentSource='bom';
+let nowIdx=-1,rawByFrame=[],cleanByFrame=[],siteMarkers=[],activeSite=null,frames=[],frameOn=[],cellsByFrame=[],grid=null,busy=false,lastKey='',spinning=false,currentSource='bom';
 
 map.on('load',()=>{
   map.addSource('ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
@@ -425,21 +499,23 @@ async function update(force){
     }
     grid=g;frames=out;rawByFrame=out.map(f=>f.cells);cleanByFrame=out.map(f=>cleanCells(f.cells,g));cellsByFrame=st.smooth?cleanByFrame:rawByFrame;
     if(frameOn.length!==frames.length)frameOn=frames.map(()=>true);
-    lastKey=key;renderChips();redraw();stamp();
+    if(nowIdx>=frames.length||nowIdx===prevLen-1)nowIdx=frames.length-1;prevLen=frames.length;
+    lastKey=key;renderChips();redraw();stamp();syncTime();
     const total=out.reduce((a,f)=>a+f.cells.length,0);
     status(total?null:`No rain within ${RANGE_KM} km of ${s[0]} right now.`);
   }catch(e){status(e&&e.message&&e.message!=='blocked'?e.message:'Could not load radar. Check your internet and tap Refresh.',true)}
   busy=false;
   if(pendingForce!==null){const f=pendingForce;pendingForce=null;update(f)}
 }
-let pendingForce=null;
+let pendingForce=null,prevLen=0;
 
 /* ---- build the 3D features ---- */
 function redraw(){
   if(!grid||!map.getSource('storm'))return;
   const g=grid,feats=[],shadow=[],n=frames.length,floatM=st.float*1000*VX,gapM=st.gap*GAP_UNIT;
   const top=new Float32Array(g.nx*g.ny); // running top per cell (3D stack)
-  const shown=frames.map((f,i)=>frameOn[i]&&(st.mode!=='now'||i===n-1));
+  const ni=nowIdx<0||nowIdx>=n?n-1:nowIdx;
+  const shown=frames.map((f,i)=>st.mode==='now'?i===ni:frameOn[i]);
   let layer=0;
   for(let i=0;i<n;i++){
     if(!shown[i])continue;
@@ -485,7 +561,7 @@ function stamp(){
 }
 
 /* ================= controls ================= */
-function setMode(m){st.mode=m;store.set('mode',m);
+function setMode(m){st.mode=m;store.set('mode2',m);document.body.classList.toggle('now',m==='now');if(m!=='now')stopPlay();syncTime();
   [['sep','modeSep'],['3d','mode3d'],['now','modeNow']].forEach(([k,id])=>$(id).setAttribute('aria-pressed',k===m));
   redraw();map.easeTo({pitch:m==='sep'?62:55,duration:600});}
 $('modeSep').onclick=()=>setMode('sep');$('mode3d').onclick=()=>setMode('3d');$('modeNow').onclick=()=>setMode('now');
@@ -493,8 +569,7 @@ function bindRange(id,key,fmt){const el=$(id),out=$(id+'v');el.value=st[key];out
   el.oninput=()=>{st[key]=+el.value;out.textContent=fmt(st[key]);store.set(key,st[key]);redrawSoon()}}
 bindRange('gap','gap',v=>v);bindRange('min','min',v=>v);bindRange('float','float',v=>v);
 $('count').value=st.count;$('count').onchange=()=>{st.count=+$('count').value;store.set('count',st.count);frameOn=[];update(true)};
-$('sitesBtn').onclick=()=>showSites($('sitesBtn').getAttribute('aria-pressed')!=='true');
-function applyStyle(){
+var applyStyle=function(){
   map.setLayoutProperty('sat','visibility',st.dark?'none':'visible');
   map.setLayoutProperty('dark','visibility',st.dark?'visible':'none');
   $('styleBtn').textContent=st.dark?'Satellite':'Dark';
@@ -509,7 +584,178 @@ $('refresh').onclick=()=>{if(currentSource==='rv')currentSource='bom';update(tru
 $('spin').onclick=()=>{spinning=!spinning;$('spin').setAttribute('aria-pressed',spinning);if(spinning)spin()};
 function spin(){if(!spinning)return;map.setBearing(map.getBearing()+0.15);requestAnimationFrame(spin)}
 map.on('dragstart',()=>{if(spinning){spinning=false;$('spin').setAttribute('aria-pressed',false)}});
-setMode(st.mode);
+/* ================= 2D section: BoM's own live radar (pictures straight from BoM, no relay) ================= */
+const D2=(()=>{
+  const BOM='https://www.bom.gov.au',WMTS='https://api.bom.gov.au/apikey/v1/mapping/timeseries/wmts',LAYER='atm_surf_air_precip_reflectivity_dbz',RKM=128;
+  // BoM's tile grid starts at its own corner, so its tiles need these offsets to line up (GoogleMapsCompatible_BoM)
+  const MATRIX=[[11584952,34168990.685578,1,1],[11584952,14131482.342789,1,1],[11584952,4112728.171395,1,1],[11584952,4112728.171395,2,2],[11584952,1608039.628546,3,3],[11584952,355695.357122,6,5],[11584952,-270476.778591,11,9],[11584952,-583562.846447,22,17],[11584952,-740105.880375,43,33]];
+  const BANDS=[[245,245,255],[180,180,255],[120,120,255],[20,20,255],[0,216,195],[0,150,144],[0,102,102],[255,255,0],[255,200,0],[255,150,0],[255,100,0],[255,0,0],[200,0,0],[120,0,0],[40,0,0]];
+  const FALLBACK=[[66,'Brisbane (Mt Stapylton)',-27.7178,153.24,1],[50,'Marburg',-27.6083,152.5394,1],[8,'Gympie (Mt Kanigan)',-25.9573,152.5769,1],[22,'Mackay',-21.1173,149.2173,1],[19,'Cairns',-16.8182,145.663,1],[71,'Sydney (Terrey Hills)',-33.7008,151.2094,1],[2,'Melbourne',-37.8552,144.7554,1],[64,'Adelaide (Buckland Park)',-34.617,138.4688,1],[70,'Perth (Serpentine)',-32.3918,115.8669,1],[63,'Darwin (Berrimah)',-12.4559,130.9266,1],[76,'Hobart (Mt Koonya)',-43.1126,147.8052,1],[96,'Yeoval',-32.7445,148.7081,1]];
+  const pad=n=>String(n).padStart(2,'0');
+  const bomStamp=d=>`${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}`;
+  const isoT=d=>d.toISOString().replace(/\.\d{3}Z$/,'Z');
+  const tileURL=(z,row,col,t)=>`${WMTS}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${LAYER}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=GoogleMapsCompatible_BoM&TILEMATRIX=${z}&TILEROW=${row}&TILECOL=${col}&time=${t}`;
+  function look(url,timeout=6000){return new Promise(res=>{const im=new Image();im.referrerPolicy='no-referrer';const t=setTimeout(()=>{im.src='';res(false)},timeout);
+    im.onload=()=>{clearTimeout(t);res(true)};im.onerror=()=>{clearTimeout(t);res(false)};im.src=url})}
+  const o2={product:'z',frames:store.get('frames2d')||12,op:store.get('op2d')||85,speed:store.get('speed')||3,ring:store.get('ring2d')!==false};
+  let map2=null,base=null,satL=null,labL=null,ringL=null,sites=[],site=null,zF=[],vF=[],cur=0,vCache=new Map(),markers=[],sitesOn=false,ready=null,timer=null;
+  for(const[r,g,b]of BANDS){const i=document.createElement('i');i.style.background=`rgb(${r},${g},${b})`;$('bands').appendChild(i)}
+  function offset(z){const m=MATRIX[z];if(!m)return null;const span=WORLD/2**z,fx=(m[0]+HALF)/span,fy=(HALF-m[1])/span,xo=Math.round(fx),yo=Math.round(fy);return{xo,yo,sx:(fx-xo)*256,sy:(fy-yo)*256,w:m[2],h:m[3]}}
+  function init(){
+    if(ready)return ready;
+    ready=(async()=>{
+      map2=L.map('map2d',{zoomControl:false,minZoom:4,maxZoom:11,maxBounds:[[-56,90],[5,180]],maxBoundsViscosity:0.8,zoomSnap:0.25,wheelPxPerZoomLevel:90}).setView([-27.7,153.2],8);
+      map2.attributionControl.setPrefix(false);
+      map2.createPane('radar').style.zIndex=350;
+      const lp=map2.createPane('labels');lp.style.zIndex=450;lp.style.pointerEvents='none';
+      base=L.tileLayer('https://api.bom.gov.au/apikey/v1/mapping/basemaps/basemap_dark/MapServer/tile/{z}/{y}/{x}?blankTile=false',{maxZoom:11,attribution:'© Bureau of Meteorology',referrerPolicy:'no-referrer'});
+      satL=L.tileLayer(ESRI+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,attribution:'Imagery © Esri, Maxar, Earthstar Geographics'});
+      labL=L.tileLayer(ESRI+'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,pane:'labels'});
+      base.on('tileerror',()=>{if(!st.dark)return;if(!base._warned){base._warned=true;st.dark=false;applyStyle()}});
+      ringL=L.circle([0,0],{radius:RKM*1000,color:'#5ac8fa',weight:1.2,opacity:.75,fill:false,dashArray:'5 5',interactive:false,pane:'labels'});
+      map2.on('zoomend',()=>$('map2d').classList.toggle('far',map2.getZoom()<6.5));
+      style();
+      try{const list=await Archive.sites();sites=list.filter(s=>s.current).map(s=>({id:s.id,name:s.name,lat:s.lat,lon:s.lon,doppler:!!s.epochs.at(-1).doppler}))}catch(e){sites=[]}
+      if(!sites.length)sites=FALLBACK.map(([id,name,lat,lon,d])=>({id,name,lat,lon,doppler:!!d}));
+      setInterval(()=>{if(!document.hidden&&st.view==='2d')refresh(false)},120e3);
+    })();
+    return ready;
+  }
+  function style(){if(!map2)return;if(st.dark){map2.removeLayer(satL);map2.removeLayer(labL);base.addTo(map2)}else{map2.removeLayer(base);satL.addTo(map2);labL.addTo(map2)}}
+  const Tiles=L.GridLayer.extend({createTile(c,done){const t=document.createElement('img');t.alt='';t.referrerPolicy='no-referrer';const o=offset(c.z);
+    const col=o?c.x-o.xo:-1,row=o?c.y-o.yo:-1;
+    if(!o||col<0||row<0||col>=o.w||row>=o.h){setTimeout(()=>done(null,t),0);return t}
+    t.style.marginLeft=o.sx+'px';t.style.marginTop=o.sy+'px';t.onload=()=>done(null,t);t.onerror=()=>{t.style.visibility='hidden';done(null,t)};
+    t.src=tileURL(c.z,row,col,this.options.time);return t}});
+  async function latestZ(){let t=Math.floor((Date.now()-8*60e3)/3e5)*3e5;for(let k=0;k<10;k++){if(await look(tileURL(0,0,0,isoT(new Date(t)))))return t;t-=3e5}return null}
+  async function loadZ(){
+    const newest=await latestZ();if(newest===null){status("BoM's radar tiles didn't load. Check your internet and tap Refresh.",true);return false}
+    const want=[];for(let i=o2.frames-1;i>=0;i--)want.push(newest-i*3e5);
+    const keep=new Map(zF.map(f=>[f.t,f]));for(const f of zF)if(!want.includes(f.t))map2.removeLayer(f.layer);
+    zF=want.map(t=>keep.get(t)||{t,layer:new Tiles({time:isoT(new Date(t)),pane:'radar',opacity:0,maxNativeZoom:8,maxZoom:11,updateWhenZooming:false,keepBuffer:1})});
+    zF.forEach(f=>{if(!map2.hasLayer(f.layer))f.layer.addTo(map2)});return true;
+  }
+  const vBounds=s=>{const a=RKM/110.574,b=RKM/(111.32*Math.cos(s.lat*Math.PI/180));return[[s.lat-a,s.lon-b],[s.lat+a,s.lon+b]]};
+  async function findV(s){
+    // Doppler wind frames are named by their UTC minute, roughly every 4-6 minutes
+    const id=String(s.id).padStart(2,'0'),now=Math.floor(Date.now()/6e4)*6e4,span=o2.frames*5+6,known=vCache.get(s.id)||new Map(),jobs=[];
+    for(let m=1;m<=span;m++){const t=now-m*6e4;if(known.has(t)||(known.missing&&known.missing.has(t)&&now-t>20*6e4))continue;
+      const url=`${BOM}/radar/IDR${id}I.T.${bomStamp(new Date(t))}.png`;
+      jobs.push(look(url,7000).then(ok=>{if(ok)known.set(t,url);else(known.missing=known.missing||new Set()).add(t)}))}
+    await Promise.all(jobs);vCache.set(s.id,known);
+    return[...known.entries()].filter(([t])=>now-t<=span*6e4).sort((a,b)=>a[0]-b[0]).slice(-o2.frames);
+  }
+  async function loadV(){
+    if(!(site&&vF.siteId===site.id)){for(const f of vF)map2.removeLayer(f.layer);vF=[]}
+    if(!site||!site.doppler){status(site?`${site.name} isn't a Doppler radar. Tap Sites and pick a blue one for velocity.`:'Pick a radar first.',true);return false}
+    if(!vF.length)status(`Finding ${site.name} Doppler wind…`);
+    const list=await findV(site);
+    if(!list.length){status(`No Doppler wind from ${site.name} in the last ${o2.frames*5} min. The radar may be offline or in clear air.`,true);return false}
+    const b=vBounds(site),have=new Map(vF.map(f=>[f.t,f])),wantT=new Set(list.map(([t])=>t));
+    for(const f of vF)if(!wantT.has(f.t))map2.removeLayer(f.layer);
+    vF=list.map(([t,url])=>have.get(t)||{t,layer:L.imageOverlay(url,b,{pane:'radar',opacity:0,interactive:false})});vF.siteId=site.id;
+    vF.forEach(f=>{if(!map2.hasLayer(f.layer)){f.layer.addTo(map2);const el=f.layer.getElement();if(el){el.referrerPolicy='no-referrer';el.style.imageRendering='pixelated'}}});
+    status(null);return true;
+  }
+  const F=()=>o2.product==='z'?zF:vF;
+  function show(i){const fr=F();
+    for(const set of[zF,vF])set.forEach(f=>f.layer.setOpacity(0));
+    if(!fr.length){syncTime();return}
+    cur=Math.max(0,Math.min(fr.length-1,i));fr[cur].layer.setOpacity(o2.op/100);syncTime()}
+  async function refresh(full){
+    const atEnd=cur>=F().length-1;
+    if(o2.product==='z'){if(full||!zF.length)status('Loading BoM reflectivity…');if(await loadZ())status(null)}else await loadV();
+    if(full||atEnd)show(F().length-1);else show(cur);
+  }
+  function head(){
+    if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · BoM ${o2.product==='z'?'reflectivity':'Doppler wind'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
+    $('pZ').setAttribute('aria-pressed',o2.product==='z');$('pV').setAttribute('aria-pressed',o2.product==='v');$('pV').disabled=!(site&&site.doppler);
+    $('zKey2d').hidden=o2.product!=='z';$('vKey2d').hidden=o2.product!=='v';
+    ringL.setLatLng(site?[site.lat,site.lon]:[0,0]);if(o2.ring&&site)ringL.addTo(map2);else map2.removeLayer(ringL);
+  }
+  function drawMarkers(){markers.forEach(m=>map2.removeLayer(m));markers=[];
+    for(const s of sites){if(!sitesOn&&s!==site)continue;
+      const m=L.marker([s.lat,s.lon],{icon:L.divIcon({className:'',html:`<div class="mark2d${s.doppler?' dop':''}${s===site?' active':''}" role="button" aria-label="${s.name} radar"><i></i><span>${s.name}</span></div>`,iconSize:null,iconAnchor:[7,8]}),title:s.name,zIndexOffset:s===site?1000:0}).addTo(map2);
+      m.on('click',()=>pick(s,true));markers.push(m)}}
+  function pick(s,fly){site=s;head();drawMarkers();if(fly)map2.flyToBounds(vBounds(s),{duration:.9,maxZoom:8.5});if(o2.product==='v'){if(s.doppler)refresh(true);else setProduct('z')}}
+  async function setProduct(p){if(p==='v'&&!(site&&site.doppler))return;o2.product=p;head();
+    if(p==='v'){const b=L.latLngBounds(vBounds(site));if(!map2.getBounds().intersects(b))map2.fitBounds(b)}await refresh(true)}
+  const nearest=(lat,lon,list)=>list.map(s=>[s,Math.hypot(s.lat-lat,(s.lon-lon)*Math.cos(lat*Math.PI/180))]).sort((a,b)=>a[1]-b[1])[0];
+  /* public */
+  return{
+    async enter(lat,lon,zoom,slat,slon){
+      $('map2d').hidden=false;await init();map2.invalidateSize();
+      const n=nearest(slat??lat,slon??lon,sites);if(n)site=n[0];if(!site)site=sites[0];
+      map2.setView([lat,lon],zoom);head();drawMarkers();await refresh(!zF.length);
+    },
+    leave(){$('map2d').hidden=true;return map2?{c:map2.getCenter(),z:map2.getZoom(),site}:null},
+    toggleSites(){sitesOn=!sitesOn;if(sitesOn&&map2.getZoom()>6.5)map2.flyTo(map2.getCenter(),5.5,{duration:.8});drawMarkers();return sitesOn},
+    style,setProduct,show,refresh,
+    frames:()=>F(),cur:()=>cur,
+    setFrames(n){o2.frames=n;store.set('frames2d',n);refresh(true)},
+    setOp(v){o2.op=v;store.set('op2d',v);show(cur)},
+    toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();return o2.ring},
+    aus(){if(o2.product==='v')setProduct('z');map2.flyToBounds([[-44,112],[-10,154]],{duration:1})},
+    refreshNow(){if(site)vCache.delete(site.id);refresh(true)},
+    keyURL:()=>site?`${BOM}/radar/IDR${String(site.id).padStart(2,'0')}I.gif?${Date.now()}`:'',
+    locate(ll){const n=nearest(ll[0],ll[1],sites.filter(s=>s.doppler));if(n)pick(n[0],false);
+      if(this._me)map2.removeLayer(this._me);this._me=L.marker(ll,{icon:L.divIcon({className:'',html:'<div class="me2d"></div>',iconAnchor:[10,10]}),interactive:false}).addTo(map2);map2.flyTo(ll,8.5,{duration:1})},
+    o2,
+  };
+})();
+
+/* ================= switching between 2D and 3D ================= */
+async function setView(v){
+  stopPlay();st.view=v;store.set('view',v);document.body.classList.toggle('v2d',v==='2d');
+  $('v2d').setAttribute('aria-pressed',v==='2d');$('v3d').setAttribute('aria-pressed',v==='3d');
+  if(v==='2d'){
+    const c=map.getCenter();await D2.enter(c.lat,c.lng,Math.max(5,Math.min(10.5,map.getZoom()+1)),activeSite?activeSite[2]:undefined,activeSite?activeSite[3]:undefined);
+    $('sitesBtn').setAttribute('aria-pressed',false);
+  }else{
+    const p=D2.leave();
+    if(p&&p.site&&activeSite){const near=SITES.map(s=>[s,Math.hypot(s[2]-p.site.lat,s[3]-p.site.lon)]).sort((a,b)=>a[1]-b[1])[0];
+      if(near&&near[1]<0.05&&near[0]!==activeSite){selectSite(near[0],{fly:true})}}
+    map.resize();stamp();showSites($('sitesBtn').getAttribute('aria-pressed')==='true');
+  }
+  syncTime();
+}
+$('v2d').onclick=()=>setView('2d');$('v3d').onclick=()=>setView('3d');
+$('pZ').onclick=()=>D2.setProduct('z');$('pV').onclick=()=>D2.setProduct('v');
+$('frames2d').value=D2.o2.frames;$('frames2d').onchange=()=>D2.setFrames(+$('frames2d').value);
+$('op2d').value=D2.o2.op;$('op2dv').textContent=D2.o2.op+'%';$('op2d').oninput=()=>{$('op2dv').textContent=$('op2d').value+'%';D2.setOp(+$('op2d').value)};
+$('speed').value=D2.o2.speed;$('speedv').textContent=D2.o2.speed;$('speed').oninput=()=>{D2.o2.speed=+$('speed').value;$('speedv').textContent=D2.o2.speed;store.set('speed',D2.o2.speed)};
+$('ring2d').setAttribute('aria-pressed',D2.o2.ring);$('ring2d').onclick=()=>$('ring2d').setAttribute('aria-pressed',D2.toggleRing());
+$('aus2d').onclick=()=>D2.aus();$('refresh2d').onclick=()=>D2.refreshNow();
+$('keyBtn').onclick=()=>{const u=D2.keyURL();if(!u)return;$('keyImg').referrerPolicy='no-referrer';$('keyImg').src=u;$('keySheet').hidden=false};
+$('keyClose').onclick=()=>{$('keySheet').hidden=true};
+$('loc2d').onclick=()=>{if(!navigator.geolocation){status('This browser cannot share your location.',true);return}
+  status('Finding your location…');navigator.geolocation.getCurrentPosition(p=>{status(null);D2.locate([p.coords.latitude,p.coords.longitude])},()=>status('Location was not shared.',true),{timeout:10000})};
+
+/* ================= shared playback bar (2D loop, and 3D Latest) ================= */
+let playing=false,playT=null;
+function frameList(){return st.view==='2d'?D2.frames().map(f=>f.t):frames.map(f=>f.time*1000)}
+function curIdx(){if(st.view==='2d')return D2.cur();const n=frames.length;return nowIdx<0||nowIdx>=n?n-1:nowIdx}
+function goTo(i){const L2=frameList();if(!L2.length)return;i=Math.max(0,Math.min(L2.length-1,i));
+  if(st.view==='2d')D2.show(i);else{nowIdx=i;redraw();syncTime()}}
+function syncTime(){const L2=frameList(),i=curIdx(),out=$('tlabel');
+  $('time').max=Math.max(0,L2.length-1);$('time').value=Math.max(0,i);
+  if(!L2.length){out.textContent='–';return}
+  const t=L2[i],ago=Math.round((Date.now()-t)/6e4);out.textContent=new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  out.classList.toggle('old',i===L2.length-1&&ago>25);out.title=`${ago} min ago`;
+  if(st.view==='3d'&&st.mode==='now'&&frames.length)$('meta').innerHTML=`${SOURCES[currentSource].name} reflectivity · ${i===L2.length-1?'latest':'frame'} ${out.textContent} (${ago} min ago)`;
+}
+function stopPlay(){playing=false;clearTimeout(playT);$('play').setAttribute('aria-pressed',false);$('play').textContent='Play'}
+function tick(){const L2=frameList();if(!playing||!L2.length)return;const i=curIdx(),nx=i>=L2.length-1?0:i+1;goTo(nx);
+  const sp=st.view==='2d'?D2.o2.speed:3;playT=setTimeout(tick,nx===L2.length-1?1400:st.view==='2d'?[0,900,650,450,300,180][sp]:700)}
+$('play').onclick=()=>{if(playing){stopPlay();return}playing=true;$('play').setAttribute('aria-pressed',true);$('play').textContent='Pause';tick()};
+$('prev').onclick=()=>{stopPlay();goTo(curIdx()-1)};$('next').onclick=()=>{stopPlay();goTo(curIdx()+1)};
+$('time').oninput=()=>{stopPlay();goTo(+$('time').value)};
+// header buttons act on whichever map is showing
+$('sitesBtn').onclick=()=>{if(st.view==='2d')$('sitesBtn').setAttribute('aria-pressed',D2.toggleSites());else showSites($('sitesBtn').getAttribute('aria-pressed')!=='true')};
+const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style()};
+
+st.mode=st.mode2||'now';setMode(st.mode);
+if(st.view==='2d')map.once('idle',()=>setView('2d'));
 function labelZoom(){$('map').classList.toggle('far',map.getZoom()<5.6)}
 map.on('zoomend',labelZoom);map.on('load',labelZoom);
 for(let z=15;z<70;z++){const i=document.createElement('i');i.style.background=hex(z);$('scale').appendChild(i)}
