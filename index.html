@@ -85,7 +85,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .keyrow i.d{border-color:var(--accent)}
 /* ---- RadarScope look ---- */
 :root{--ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",system-ui,sans-serif;
-  --bg:#000;--panel:rgba(22,22,24,.96);--line:#38383a;--fg:#fff;--muted:#8e8e93;--accent:#5ac8fa;--warn:#ffd60a;--live:#ff453a;--fill:#2c2c2e;
+  --bg:#000;--panel:rgba(22,22,24,.96);--line:#38383a;--fg:#fff;--muted:#8e8e93;--accent:#bf5af2;--warn:#ffd60a;--live:#ff453a;--fill:#2c2c2e;
   --display:var(--ui);--body:var(--ui);--mono:var(--ui)}
 body{font:15px/1.3 var(--ui);-webkit-font-smoothing:antialiased}
 header{background:#161618;border-bottom:1px solid var(--line);padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;align-items:center}
@@ -167,7 +167,7 @@ body.now .frames{display:none!important}
 #b3d{position:fixed;inset:0;z-index:1;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
 body.b3:not(.b3pick) #map{visibility:hidden}
 body.b3pick #b3d{display:none}
-.b3v{position:absolute;inset:0}
+.b3z,.b3v{position:absolute;inset:0}
 .b3w{position:absolute;transform-style:preserve-3d;transform-origin:50% 50%;pointer-events:none}
 .b3g{position:absolute;inset:0;overflow:hidden;border-radius:4px;background:#0b0f14}
 .b3g img{position:absolute;max-width:none}
@@ -185,7 +185,7 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
 <body>
 <div id="map"></div>
 <div id="map2d" hidden></div>
-<div id="b3d" hidden aria-label="3D radar. Drag to turn, pinch to zoom, two fingers to move."><div class="b3v" id="b3v"><div class="b3w" id="b3w"><div class="b3g" id="b3g"></div></div></div><div class="b3hint" id="b3hint">Drag to turn · pinch to zoom · two fingers to move</div></div>
+<div id="b3d" hidden aria-label="3D radar. Drag to turn, pinch to zoom, two fingers to move."><div class="b3z" id="b3z"><div class="b3v" id="b3v"><div class="b3w" id="b3w"><div class="b3g" id="b3g"></div></div></div></div><div class="b3hint" id="b3hint">Drag to turn · pinch to zoom · two fingers to move</div></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><image id="b3img" x="0" y="0" width="512" height="512" preserveAspectRatio="none" style="image-rendering:pixelated"/><g id="b3defs"></g></defs></svg>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="rsZ" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
@@ -919,14 +919,14 @@ const D2=(()=>{
     $('b3g').innerHTML=h;
   }
   function b3cam(){const c=B3.cam;
-    $('b3v').style.transform=`scale(${c.zoom.toFixed(4)})`;
+    $('b3z').style.transform=`scale(${c.zoom.toFixed(4)})`;   // zoom = make the whole finished 3D picture bigger, the camera never moves
     $('b3w').style.transform=`rotateX(${c.tilt.toFixed(2)}deg) rotateZ(${c.bearing.toFixed(2)}deg) translate(${c.gx.toFixed(1)}px,${c.gy.toFixed(1)}px)`}
   function b3layout(){
     if(!B3.on)return;
     const hb=document.querySelector('header').getBoundingClientRect().bottom,dt=document.querySelector('.dock').getBoundingClientRect().top;
     const free=Math.max(160,dt-hb),cx=innerWidth/2,cy=hb+free*0.5;
     const S=Math.round(Math.min(innerWidth*0.96,free*1.7,900));
-    B3.P=Math.max(700,S*1.6);const v=$('b3v');v.style.perspective=B3.P+'px';v.style.perspectiveOrigin=`${cx}px ${cy}px`;v.style.transformOrigin=`${cx}px ${cy}px`;
+    B3.P=Math.max(700,S*1.6);const v=$('b3v');v.style.perspective=B3.P+'px';v.style.perspectiveOrigin=`${cx}px ${cy}px`;$('b3z').style.transformOrigin=`${cx}px ${cy}px`;
     const w=$('b3w');w.style.left=(cx-S/2)+'px';w.style.top=(cy-S/2)+'px';w.style.width=w.style.height=S+'px';
     if(S!==B3.S){B3.S=S;b3ground();b3place()}b3cam();
   }
