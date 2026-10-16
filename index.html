@@ -740,10 +740,12 @@ const D2=(()=>{
     return loadPics(vF,'I',RKM,'Doppler wind');
   }
   const F=()=>o2.product==='z'?zF:vF;
+  // only the frame on screen is drawn; the rest stay loaded but hidden, so the colour filter isn't re-run on every frame while zooming
+  function vis(layer,on){const el=layer.getContainer?layer.getContainer():layer.getElement&&layer.getElement();if(el)el.style.visibility=on?'visible':'hidden';layer.setOpacity(on?o2.op/100:0)}
   function show(i){const fr=F();
-    for(const set of[zF,vF])set.forEach(f=>f.layer.setOpacity(0));
-    if(!fr.length){syncTime();return}
-    cur=Math.max(0,Math.min(fr.length-1,i));fr[cur].layer.setOpacity(o2.op/100);syncTime()}
+    if(fr.length)cur=Math.max(0,Math.min(fr.length-1,i));
+    for(const set of[zF,vF])set.forEach(f=>vis(f.layer,set===fr&&f===fr[cur]));
+    syncTime()}
   async function refresh(full){
     const atEnd=cur>=F().length-1;
     if(o2.product==='z'){if(full||!zF.length)status('Loading BoM reflectivity…');if(await loadZ())status(null)}else await loadV();
