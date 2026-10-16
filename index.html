@@ -229,7 +229,6 @@ body.now .frames{display:none!important}
       <div class="row"><label for="src2d">Reflectivity</label><select id="src2d"><option value="bom">BoM (sharper, every 5 min)</option><option value="rv">RainViewer (every 10 min)</option></select><span></span></div>
       <div class="row"><label for="range2d">Area</label><select id="range2d"><option value="64">64 km around the radar</option><option value="128" selected>128 km around the radar</option><option value="256">256 km around the radar</option><option value="nat">All of Australia</option></select><span></span></div>
       <div class="row"><label for="frames2d">Loop length</label><select id="frames2d"><option value="6">30 min</option><option value="12" selected>1 hour</option><option value="24">2 hours</option></select><span></span></div>
-      <div class="row"><label for="op2d">Radar opacity</label><input id="op2d" type="range" min="20" max="100" value="85"><output id="op2dv">85%</output></div>
       <div class="row"><label for="speed">Loop speed</label><input id="speed" type="range" min="1" max="5" value="3"><output id="speedv">3</output></div>
       <div class="btns">
         <button id="rs2d" aria-pressed="true">RadarScope colours</button>
@@ -616,7 +615,7 @@ const D2=(()=>{
   const tileURL=(z,row,col,t)=>`${WMTS}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${LAYER}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=GoogleMapsCompatible_BoM&TILEMATRIX=${z}&TILEROW=${row}&TILECOL=${col}&time=${t}`;
   function look(url,timeout=6000){return new Promise(res=>{const im=new Image();im.referrerPolicy='no-referrer';const t=setTimeout(()=>{im.src='';res(false)},timeout);
     im.onload=()=>{clearTimeout(t);res(true)};im.onerror=()=>{clearTimeout(t);res(false)};im.src=url})}
-  const o2={product:'z',src:store.get('src2d')||'bom',range:store.get('range2d')||'128',rs:store.get('rs2d')!==false,frames:store.get('frames2d')||12,op:store.get('op2d')||85,speed:store.get('speed')||3,ring:store.get('ring2d')!==false};
+  const o2={product:'z',src:store.get('src2d')||'bom',range:store.get('range2d')||'128',rs:store.get('rs2d')!==false,frames:store.get('frames2d')||12,speed:store.get('speed')||3,ring:store.get('ring2d')!==false};
   const LETTER={'64':'4','128':'3','256':'2'};
   /* RadarScope colours: the phone's graphics filter swaps BoM's 15 colours while drawing. Step 1 turns each BoM colour into one
      unique brightness (s = -0.5R + 0.375G + 0.125B + 0.5); step 2 looks that brightness up in a table of RadarScope colours. */
@@ -643,7 +642,7 @@ const D2=(()=>{
   function init(){
     if(ready)return ready;
     ready=(async()=>{
-      map2=L.map('map2d',{zoomControl:false,minZoom:4,maxZoom:11,maxBounds:[[-56,90],[5,180]],maxBoundsViscosity:0.8,zoomSnap:0.25,wheelPxPerZoomLevel:90}).setView([-27.7,153.2],8);
+      map2=L.map('map2d',{zoomControl:false,zoomAnimation:false,fadeAnimation:false,minZoom:4,maxZoom:11,maxBounds:[[-56,90],[5,180]],maxBoundsViscosity:0.8,zoomSnap:0.25,wheelPxPerZoomLevel:90}).setView([-27.7,153.2],8);
       map2.attributionControl.setPrefix(false);
       map2.createPane('radar').style.zIndex=350;
       const lp=map2.createPane('labels');lp.style.zIndex=450;lp.style.pointerEvents='none';
@@ -672,6 +671,23 @@ const D2=(()=>{
     if(onload)im.addEventListener('load',onload);if(onerror)im.addEventListener('error',onerror);
     im.setAttribute('href',url);svg.appendChild(im);PICS.add(im);return svg}
   function refilter(){for(const im of PICS){if(!im.isConnected){PICS.delete(im);continue}const f=picFilter(im.dataset.kind);if(f)im.setAttribute('filter',f);else im.removeAttribute('filter')}}
+  /* Safari gives up on colour filters bigger than ~16 million screen pixels, and zoomed in a whole radar picture is far bigger.
+     So this layer only ever draws the slice of the picture that's on screen (plus a margin), cropped with the SVG viewBox. */
+  const CropPic=L.Layer.extend({
+    initialize(url,bounds,kind,opts){this._url=url;this._b=L.latLngBounds(bounds);this._kind=kind;L.setOptions(this,opts)},
+    onAdd(map){this._svg=svgPic(this._url,512,this._kind,true);this._svg.style.position='absolute';this._svg.style.visibility='hidden';
+      this.getPane().appendChild(this._svg);map.on('moveend zoomend resize viewreset',this.update,this);this.update()},
+    onRemove(map){map.off('moveend zoomend resize viewreset',this.update,this);L.DomUtil.remove(this._svg);PICS.delete(this._svg.firstChild)},
+    getElement(){return this._svg},
+    setOpacity(o){if(this._svg)this._svg.style.opacity=o>=1?'':o},
+    update(){const m=this._map,svg=this._svg;if(!m||!svg||svg.style.visibility==='hidden')return;
+      const nw=m.latLngToLayerPoint(this._b.getNorthWest()),se=m.latLngToLayerPoint(this._b.getSouthEast()),W=se.x-nw.x,H=se.y-nw.y;
+      const sz=m.getSize(),mx=sz.x*0.2,my=sz.y*0.2,a=m.containerPointToLayerPoint([-mx,-my]),b=m.containerPointToLayerPoint([sz.x+mx,sz.y+my]);
+      const x0=Math.max(nw.x,a.x),y0=Math.max(nw.y,a.y),x1=Math.min(se.x,b.x),y1=Math.min(se.y,b.y);
+      if(x1<=x0||y1<=y0||W<=0){svg.style.display='none';return}svg.style.display='';
+      L.DomUtil.setPosition(svg,L.point(x0,y0));svg.setAttribute('width',x1-x0);svg.setAttribute('height',y1-y0);svg.style.width=(x1-x0)+'px';svg.style.height=(y1-y0)+'px';
+      svg.setAttribute('viewBox',`${(x0-nw.x)/W*512} ${(y0-nw.y)/H*512} ${(x1-x0)/W*512} ${(y1-y0)/H*512}`)}
+  });
   const Tiles=L.GridLayer.extend({createTile(c,done){const o=offset(c.z);
     const col=o?c.x-o.xo:-1,row=o?c.y-o.yo:-1;
     if(!o||col<0||row<0||col>=o.w||row>=o.h){const e=document.createElement('div');setTimeout(()=>done(null,e),0);return e}
@@ -730,7 +746,7 @@ const D2=(()=>{
     const b=vBounds(site,km),have=new Map(arr.map(f=>[f.t,f])),wantT=new Set(list.map(([t])=>t));
     for(const f of arr)if(!wantT.has(f.t))map2.removeLayer(f.layer);
     const kind=letter==='I'?'v':'z';
-    const next=list.map(([t,url])=>have.get(t)||{t,layer:L.svgOverlay(svgPic(url,512,kind,true),b,{pane:'radar',opacity:0,interactive:false})});
+    const next=list.map(([t,url])=>have.get(t)||{t,layer:new CropPic(url,b,kind,{pane:'radar'})});
     arr.length=0;arr.push(...next);
     arr.forEach(f=>{if(!map2.hasLayer(f.layer))f.layer.addTo(map2)});
     status(null);return true;
@@ -741,7 +757,7 @@ const D2=(()=>{
   }
   const F=()=>o2.product==='z'?zF:vF;
   // only the frame on screen is drawn; the rest stay loaded but hidden, so the colour filter isn't re-run on every frame while zooming
-  function vis(layer,on){const el=layer.getContainer?layer.getContainer():layer.getElement&&layer.getElement();if(el)el.style.visibility=on?'visible':'hidden';layer.setOpacity(on?o2.op/100:0)}
+  function vis(layer,on){const el=layer.getContainer?layer.getContainer():layer.getElement&&layer.getElement();if(el)el.style.visibility=on?'visible':'hidden';layer.setOpacity(on?1:0);if(on&&layer.update)layer.update()}
   function show(i){const fr=F();
     if(fr.length)cur=Math.max(0,Math.min(fr.length-1,i));
     for(const set of[zF,vF])set.forEach(f=>vis(f.layer,set===fr&&f===fr[cur]));
@@ -755,7 +771,7 @@ const D2=(()=>{
     if(site){$('hName').textContent=site.name;$('meta').innerHTML=`IDR${String(site.id).padStart(2,'0')} · ${o2.product==='z'?(o2.src==='rv'?'RainViewer reflectivity':o2.range==='nat'?'BoM reflectivity, all of Australia':`BoM reflectivity ${o2.range} km`):'Doppler wind 128 km'} · ${site.doppler?'Doppler radar':'rain-only radar'}`}
     $('pZ').setAttribute('aria-pressed',o2.product==='z');$('pV').setAttribute('aria-pressed',o2.product==='v');$('pV').disabled=!(site&&site.doppler);
     $('zKey2d').hidden=o2.product!=='z';$('vKey2d').hidden=o2.product!=='v';
-    refilter();
+    refilter();const mz=o2.product==='z'&&o2.src==='bom'&&o2.range==='nat'?9.5:11;if(map2.getMaxZoom()!==mz)map2.setMaxZoom(mz);
     $('range2d').disabled=o2.src==='rv';
     const km=o2.product==='v'?RKM:(o2.range==='nat'||o2.src==='rv'?0:+o2.range);
     ringL.setLatLng(site?[site.lat,site.lon]:[0,0]);ringL.setRadius((km||RKM)*1000);if(o2.ring&&site&&km)ringL.addTo(map2);else map2.removeLayer(ringL);
@@ -786,7 +802,6 @@ const D2=(()=>{
       if(r!=='nat'&&site)fitTo(vBounds(site,+r),true);else if(r==='nat')fitTo([[-44,112],[-10,154]],true);refresh(true)},
     toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();drawVbar();head();if(o2.src==='rv')zF.forEach(f=>f.layer.redraw());return o2.rs},
     setSrc(v){o2.src=v;store.set('src2d',v);if(o2.product==='v')o2.product='z';head();refresh(true)},
-    setOp(v){o2.op=v;store.set('op2d',v);show(cur)},
     toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();return o2.ring},
     aus(){this.setRange('nat');$('range2d').value='nat'},
     refreshNow(){vCache.clear();refresh(true)},
@@ -815,7 +830,7 @@ async function setView(v){
 $('v2d').onclick=()=>setView('2d');$('v3d').onclick=()=>setView('3d');
 $('pZ').onclick=()=>D2.setProduct('z');$('pV').onclick=()=>D2.setProduct('v');
 $('frames2d').value=D2.o2.frames;$('frames2d').onchange=()=>D2.setFrames(+$('frames2d').value);
-$('op2d').value=D2.o2.op;$('op2dv').textContent=D2.o2.op+'%';$('op2d').oninput=()=>{$('op2dv').textContent=$('op2d').value+'%';D2.setOp(+$('op2d').value)};
+
 $('speed').value=D2.o2.speed;$('speedv').textContent=D2.o2.speed;$('speed').oninput=()=>{D2.o2.speed=+$('speed').value;$('speedv').textContent=D2.o2.speed;store.set('speed',D2.o2.speed)};
 $('ring2d').setAttribute('aria-pressed',D2.o2.ring);$('ring2d').onclick=()=>$('ring2d').setAttribute('aria-pressed',D2.toggleRing());
 $('aus2d').onclick=()=>D2.aus();
