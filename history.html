@@ -289,6 +289,9 @@ function sunPos(ms,lat,lon){const r=Math.PI/180,d=ms/864e5-10957.5,g=(357.529+0.
 // [sun height°, sky top, horizon, sunlight colour, sunlight strength, sky light strength, map brightness]
 const SKYK=[[-18,'#02040a','#060a13','#000000',0,0.34,0.32],[-8,'#06102a','#1b2346','#3a4a80',0.04,0.42,0.42],[-2,'#14295a','#7a4a62','#ff8a5a',0.2,0.5,0.55],
   [2,'#24497f','#f08a4a','#ff9a5a',0.5,0.6,0.7],[9,'#3a6cb0','#f3c48e','#ffc890',0.72,0.72,0.86],[25,'#2a66b4','#a8c9ea','#fff4e2',0.85,0.8,1]];
+// satellite map brightness: the same as the 2D view in every 3D view (it used to be darkened a lot in 3D, especially Volume),
+// only dimmed for dusk and night
+const groundLevel=()=>Math.max(0.5,SKY.ground??1)*(st.view==='volume'&&!st.grey?0.85:1);
 const SKY={dir:new THREE.Vector3(-0.5,0.7,0.4).normalize(),key:''};
 const hemi=scene.children.find(o=>o.isHemisphereLight);
 const skyCanvas=document.createElement('canvas');skyCanvas.width=2;skyCanvas.height=256;const skyTex=new THREE.CanvasTexture(skyCanvas);
@@ -303,7 +306,7 @@ function applySky(ms,site){
   const e=Math.max(el,6)*Math.PI/180;SKY.dir.set(Math.sin(az)*Math.cos(e),Math.sin(e),-Math.cos(az)*Math.cos(e)).normalize();
   sun.position.copy(SKY.dir).multiplyScalar(200);sun.color.copy(sc);sun.intensity=si;
   if(hemi){hemi.color.copy(top).lerp(new THREE.Color(0xdbe9ff),0.55);hemi.intensity=hi}
-  SKY.ground=gb;if(satMesh)satMesh.material.color.setScalar(gb*(st.view==='volume'?0.45:1));
+  SKY.ground=gb;if(satMesh)satMesh.material.color.setScalar(groundLevel());
   volMat.uniforms.uSunCol.value.copy(sc).multiplyScalar(Math.max(si,0.05)*1.2);
   volMat.uniforms.uSky.value.copy(top).lerp(hor,0.5).lerp(new THREE.Color(0x8a96a8),0.35).multiplyScalar(0.6+hi*0.6);
   {const k=volMat.uniforms.uSky.value;k.r=Math.max(k.r,0.2);k.g=Math.max(k.g,0.22);k.b=Math.max(k.b,0.3)}   // moonlight: clouds stay visible at night
@@ -341,7 +344,7 @@ function buildGround(site,R){
     return new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide,fog:false,transparent,depthWrite:!transparent}))};
   (async()=>{
     const img=await mosaic('World_Imagery','#0d1620');if(token!==groundToken)return;
-    if(img){const ctx=img.getContext('2d');ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(0,0,img.width,img.height);satMesh=surface(img,0,false);ground.add(satMesh);$('mapBtn').hidden=false}
+    if(img){satMesh=surface(img,0,false);ground.add(satMesh);$('mapBtn').hidden=false}
     const lab=await mosaic('Reference/World_Boundaries_and_Places',null);if(token!==groundToken)return;
     if(lab){labelMesh=surface(lab,0.25,true);labelMesh.renderOrder=3;ground.add(labelMesh)}
     applyMap();
@@ -546,7 +549,7 @@ function render(){
   if(fr.state!=='ok'){if(fr.state==='bad')status(`Couldn't load ${fmtTime(fr.entry.time)}: ${fr.err}`,true);else status(`Still loading ${fmtTime(fr.entry.time)}…`);return}
   if(frames.every(f=>f.state==='ok'||f.state==='bad'))status(null);else if(!$('status').classList.contains('err'))status(null);
   clearStorm();freeOldGeometry(st.t);freeVolTextures(st.t);dropFrame();document.body.classList.toggle('withshells',st.view==='volume'&&st.volShells);
-  if(satMesh)satMesh.material.color.setScalar((SKY.ground??1)*(st.view==='volume'?0.45:1));
+  if(satMesh)satMesh.material.color.setScalar(groundLevel());
   const radar=st.view==='radar';
   TOPR=Math.min(150,(fr.out.polar.r0+fr.out.polar.rs*(fr.out.polar.z?fr.out.polar.z.nbins:0))/1000||150);
   topPlane.visible=radar;
