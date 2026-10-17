@@ -202,13 +202,13 @@ body.picking #scene{cursor:crosshair}
     <div class="chips" data-views="volume"><span class="lbl">Quality</span><button class="chip sel" id="qLow" aria-pressed="false">Low</button><button class="chip sel" id="qMed" aria-pressed="true">Medium</button><button class="chip sel" id="qHigh" aria-pressed="false">High</button></div>
     <div class="row" data-views="volume"><label for="vOp">Fog density</label><input id="vOp" type="range" min="10" max="100" value="40"><output id="vOpv">40%</output></div>
     <div class="row" data-views="volume"><label for="vMin" id="vMinLbl">Glow from</label><input id="vMin" type="range" min="10" max="60" value="25"><output id="vMinv">25</output></div>
-    <div class="chips" data-views="volume"><span class="lbl">Style</span><button class="chip sel" id="vPal" aria-pressed="true">GR2 colours</button><button class="chip sel" id="vBox" aria-pressed="true">Box &amp; heights</button><button class="chip sel" id="vShell" aria-pressed="false">Shells inside</button></div>
+    <div class="chips" data-views="volume"><span class="lbl">Style</span><button class="chip sel" id="vPal" aria-pressed="true">GR2 colours</button><button class="chip sel" id="vBox" aria-pressed="true">Box &amp; heights</button><button class="chip sel" id="vShell" aria-pressed="false">Shells inside</button><button class="chip sel" id="vCloud" aria-pressed="false">Cloud look</button></div>
     <div class="note warnnote" data-views="volume">Volume render is heavy on older phones. If it stutters, pick Low.</div>
     <div class="chips shellchips" id="zChips"><span class="lbl">dBZ shells</span></div>
     <div class="chips shellchips" id="vChips"><span class="lbl">Wind shells</span></div>
     <div class="chips shellchips" id="cChips"><span class="lbl">Low-CC shells</span></div>
     <div class="opac" id="opac"></div>
-    <div class="chips" id="greyRow"><span class="lbl">Look</span><button class="chip" id="grey" aria-pressed="false">Grey storm</button><button class="chip" id="opReset">Reset see-through</button></div>
+    <div class="chips" id="greyRow"><span class="lbl">Look</span><button class="chip" id="grey" aria-pressed="false">Cloud look</button><button class="chip" id="opReset">Reset see-through</button></div>
     <div class="row" data-views="tilts blocks"><label for="min" id="minLbl">Min dBZ</label><input id="min" type="range" min="10" max="70" value="25"><output id="minv">25</output></div>
     <div class="row" data-views="tilts"><label for="spread">Spread tilts</label><input id="spread" type="range" min="0" max="6" step="0.5" value="0"><output id="spreadv">0</output></div>
     <div class="row" data-views="radar"><label for="radarOp">Radar opacity</label><input id="radarOp" type="range" min="10" max="100" value="90"><output id="radarOpv">90%</output></div>
@@ -222,7 +222,7 @@ body.picking #scene{cursor:crosshair}
       <button id="spin" aria-pressed="false">Auto-rotate</button>
       <button id="reset">Reset view</button>
     </div>
-    <div class="note">Velocity is wind toward (green) or away from (red) the radar. CC near 1 (dark red) is plain rain; lower CC inside a strong storm usually means large hail, and a low-CC blob on a rotation couplet is the classic tornado debris signature. CC only exists on dual-pol radars. Heights are stretched ×2.5 by default.<br>Radar data: Bureau of Meteorology via the AURA archive (NCI, Monash University), non-commercial licence. Map imagery © Esri and its partners. Built by Team Twister.</div>
+    <div class="note">Velocity is wind toward (green) or away from (red) the radar. CC near 1 (dark red) is plain rain; lower CC inside a strong storm usually means large hail, and a low-CC blob on a rotation couplet is the classic tornado debris signature. CC only exists on dual-pol radars. Heights are stretched ×2.5 by default.<br>Unofficial and not endorsed by BoM; not for safety decisions. Radar data: Australian Unified Radar Archive, Bureau of Meteorology, © Commonwealth of Australia, licensed under CC BY 4.0, hosted by NCI Australia; regridded and drawn in 3D by Team Twister. Map imagery © Esri and its partners. Built by Team Twister. <a href="about.html" style="color:var(--accent)">Full disclaimer and credits</a>.</div>
   </div>
  </div>
 </div>
@@ -274,6 +274,40 @@ function label(text,x,z,color){
   sp.userData.aspect=w/c.height;sp.position.set(x,3.2,z);sp.renderOrder=10;LABELS.push(sp);return sp;
 }
 function disposeTree(o){o.traverse(n=>{if(n.geometry)n.geometry.dispose();if(n.material){[].concat(n.material).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}})}
+
+/* ================= sky follows the time of the scan =================
+   Works out where the sun was over the radar at the moment of the scan you're looking at, and colours the sky, the haze and
+   the lighting to match: blue by day, gold and orange around sunrise and sunset, deep blue at dusk, dark at night. During
+   playback it changes frame by frame. */
+function sunPos(ms,lat,lon){const r=Math.PI/180,d=ms/864e5-10957.5,g=(357.529+0.98560028*d)*r,q=280.459+0.98564736*d;
+  const L=(q+1.915*Math.sin(g)+0.020*Math.sin(2*g))*r,e=(23.439-0.00000036*d)*r;
+  const ra=Math.atan2(Math.cos(e)*Math.sin(L),Math.cos(L)),dec=Math.asin(Math.sin(e)*Math.sin(L));
+  const gmst=((18.697374558+24.06570982441908*d)%24+24)%24,ha=(gmst*15+lon)*r-ra,la=lat*r;
+  const el=Math.asin(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(ha));
+  const az=Math.atan2(-Math.sin(ha),Math.tan(dec)*Math.cos(la)-Math.sin(la)*Math.cos(ha));   // from north, clockwise
+  return{el:el/r,az}}
+// [sun height°, sky top, horizon, sunlight colour, sunlight strength, sky light strength, map brightness]
+const SKYK=[[-18,'#02040a','#060a13','#000000',0,0.34,0.32],[-8,'#06102a','#1b2346','#3a4a80',0.04,0.42,0.42],[-2,'#14295a','#7a4a62','#ff8a5a',0.2,0.5,0.55],
+  [2,'#24497f','#f08a4a','#ff9a5a',0.5,0.6,0.7],[9,'#3a6cb0','#f3c48e','#ffc890',0.72,0.72,0.86],[25,'#2a66b4','#a8c9ea','#fff4e2',0.85,0.8,1]];
+const SKY={dir:new THREE.Vector3(-0.5,0.7,0.4).normalize(),key:''};
+const hemi=scene.children.find(o=>o.isHemisphereLight);
+const skyCanvas=document.createElement('canvas');skyCanvas.width=2;skyCanvas.height=256;const skyTex=new THREE.CanvasTexture(skyCanvas);
+function applySky(ms,site){
+  if(!ms||!site)return;const k=Math.round(ms/6e4)+'|'+site.id;if(k===SKY.key)return;SKY.key=k;
+  const{el,az}=sunPos(ms,site.lat,site.lon);
+  let i=0;while(i<SKYK.length-2&&el>SKYK[i+1][0])i++;const A=SKYK[i],B=SKYK[i+1],t=Math.max(0,Math.min(1,(el-A[0])/(B[0]-A[0])));
+  const mix=(a,b)=>new THREE.Color(a).lerp(new THREE.Color(b),t),num=(a,b)=>a+(b-a)*t;
+  const top=mix(A[1],B[1]),hor=mix(A[2],B[2]),sc=mix(A[3],B[3]),si=num(A[4],B[4]),hi=num(A[5],B[5]),gb=num(A[6],B[6]);
+  const ctx=skyCanvas.getContext('2d'),gr=ctx.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#'+top.getHexString());gr.addColorStop(0.62,'#'+hor.getHexString());gr.addColorStop(1,'#'+hor.clone().multiplyScalar(0.8).getHexString());
+  ctx.fillStyle=gr;ctx.fillRect(0,0,2,256);skyTex.needsUpdate=true;scene.background=skyTex;scene.fog.color.copy(hor).multiplyScalar(0.85);
+  const e=Math.max(el,6)*Math.PI/180;SKY.dir.set(Math.sin(az)*Math.cos(e),Math.sin(e),-Math.cos(az)*Math.cos(e)).normalize();
+  sun.position.copy(SKY.dir).multiplyScalar(200);sun.color.copy(sc);sun.intensity=si;
+  if(hemi){hemi.color.copy(top).lerp(new THREE.Color(0xdbe9ff),0.55);hemi.intensity=hi}
+  SKY.ground=gb;if(satMesh)satMesh.material.color.setScalar(gb*(st.view==='volume'?0.45:1));
+  volMat.uniforms.uSunCol.value.copy(sc).multiplyScalar(Math.max(si,0.05)*1.2);
+  volMat.uniforms.uSky.value.copy(top).lerp(hor,0.5).lerp(new THREE.Color(0x8a96a8),0.35).multiplyScalar(0.6+hi*0.6);
+  {const k=volMat.uniforms.uSky.value;k.r=Math.max(k.r,0.2);k.g=Math.max(k.g,0.22);k.b=Math.max(k.b,0.3)}   // moonlight: clouds stay visible at night
+}
 
 /* ground: satellite imagery + place names (Esri), range rings, radar marker. Built per radar. */
 let groundToken=0;
@@ -478,11 +512,25 @@ function buildTilts(o){
 }
 function meshGeo(fr,key){fr.geo=fr.geo||{};if(fr.geo[key]!==undefined)return fr.geo[key];const m=fr.out.meshes[key];
   if(!m||!m.idx.length)return fr.geo[key]=null;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(m.pos,3));g.setIndex(new THREE.BufferAttribute(m.idx,1));g.computeVertexNormals();return fr.geo[key]=g}
+/* Cloud look: the storm drawn like a real cloud. Bright white tops, darker grey base, a little lumpy shading, lit by the sun
+   for the scan's time of day (so it turns golden at sunset and dim at night). The outer shell becomes a thick cloud you can't
+   see through, like the real thing. */
+function cloudColours(geo){if(geo.userData.cloud)return;const p=geo.attributes.position,n=p.count,c=new Float32Array(n*3);
+  let top=0;for(let i=0;i<n;i++)top=Math.max(top,p.getY(i));top=Math.max(top,4);
+  for(let i=0;i<n;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),h=Math.min(1,Math.max(0,y/top));
+    const lump=(Math.sin(x*1.7+z*0.9)*Math.sin(z*1.3-y*2.1)+Math.sin(x*0.6-y*1.4+z*2.3))*0.04;
+    const v=Math.min(1,0.46+0.52*Math.pow(h,0.7)+lump);c[i*3]=v*0.97;c[i*3+1]=v*0.98;c[i*3+2]=v}
+  geo.setAttribute('color',new THREE.BufferAttribute(c,3));geo.userData.cloud=true}
 function buildShells(fr){
+  let outer=true;
   SHELLS[st.data].forEach(([k,,col,key],n)=>{
     if(!st.on[st.data][k])return;const pct=st.op[st.data][k];if(pct<=0)return;const geo=meshGeo(fr,key);if(!geo)return;
-    const o=pct/100,solid=o>=0.99;
-    const m=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({color:st.grey?0xc4cad1:col,transparent:!solid,opacity:solid?1:o,side:THREE.DoubleSide,depthWrite:o>=0.8,shininess:st.grey?12:30,clippingPlanes:[clip]}));
+    let o=pct/100;
+    if(st.grey){cloudColours(geo);if(outer)o=Math.max(o,0.93);outer=false}
+    const solid=o>=0.99;
+    const mat=st.grey?new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,transparent:!solid,opacity:solid?1:o,side:THREE.DoubleSide,depthWrite:o>=0.8,clippingPlanes:[clip]})
+      :new THREE.MeshPhongMaterial({color:col,transparent:!solid,opacity:solid?1:o,side:THREE.DoubleSide,depthWrite:o>=0.8,shininess:30,clippingPlanes:[clip]});
+    const m=new THREE.Mesh(geo,mat);
     m.renderOrder=10-n;storm.add(m)});
 }
 function stormCentre(fr){
@@ -492,13 +540,13 @@ function stormCentre(fr){
 }
 function freeOldGeometry(keep){frames.forEach((f,i)=>{if(Math.abs(i-keep)>2&&f.geo){for(const g of Object.values(f.geo))g&&g.dispose();f.geo=null}})}
 function render(){
-  meta();drawLoadbar();$('time').value=st.t;
+  meta();if(session&&frames[st.t])applySky(frames[st.t].entry.time,session.site);drawLoadbar();$('time').value=st.t;
   const fr=frames[st.t];
   if(!fr){clearStorm();return}
   if(fr.state!=='ok'){if(fr.state==='bad')status(`Couldn't load ${fmtTime(fr.entry.time)}: ${fr.err}`,true);else status(`Still loading ${fmtTime(fr.entry.time)}…`);return}
   if(frames.every(f=>f.state==='ok'||f.state==='bad'))status(null);else if(!$('status').classList.contains('err'))status(null);
   clearStorm();freeOldGeometry(st.t);freeVolTextures(st.t);dropFrame();document.body.classList.toggle('withshells',st.view==='volume'&&st.volShells);
-  if(satMesh)satMesh.material.color.setScalar(st.view==='volume'?0.45:1);
+  if(satMesh)satMesh.material.color.setScalar((SKY.ground??1)*(st.view==='volume'?0.45:1));
   const radar=st.view==='radar';
   TOPR=Math.min(150,(fr.out.polar.r0+fr.out.polar.rs*(fr.out.polar.z?fr.out.polar.z.nbins:0))/1000||150);
   topPlane.visible=radar;
@@ -523,10 +571,10 @@ function volTex(fr,field){fr.vtex=fr.vtex||{};if(fr.vtex[field])return fr.vtex[f
   if(field!=='z'){const fillv=field==='v'?64:200;d=d.slice();for(let i=0;i<d.length;i++)if(!d[i])d[i]=fillv}   // empty air = calm / pure rain, so smoothing can't invent values
   return fr.vtex[field]=tex3(d,G)}
 const volMat=new THREE.ShaderMaterial({
-  uniforms:{uZ:{value:null},uF:{value:null},uLut:{value:null},uField:{value:0},uMin:{value:25},uOpacity:{value:0.55},uSteps:{value:190},uCut:{value:-1},uCam:{value:new THREE.Vector3()}},
+  uniforms:{uCloud:{value:0},uSunDir:{value:new THREE.Vector3(0,1,0)},uSunCol:{value:new THREE.Color(1,1,1)},uSky:{value:new THREE.Color(0.5,0.6,0.7)},uZ:{value:null},uF:{value:null},uLut:{value:null},uField:{value:0},uMin:{value:25},uOpacity:{value:0.55},uSteps:{value:190},uCut:{value:-1},uCam:{value:new THREE.Vector3()}},
   vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
   fragmentShader:`precision highp float;precision highp sampler3D;
-uniform sampler3D uZ;uniform sampler3D uF;uniform sampler2D uLut;uniform int uField;uniform float uMin;uniform float uOpacity;uniform float uSteps;uniform float uCut;uniform vec3 uCam;varying vec3 vPos;
+uniform int uCloud;uniform vec3 uSunDir;uniform vec3 uSunCol;uniform vec3 uSky;uniform sampler3D uZ;uniform sampler3D uF;uniform sampler2D uLut;uniform int uField;uniform float uMin;uniform float uOpacity;uniform float uSteps;uniform float uCut;uniform vec3 uCam;varying vec3 vPos;
 vec2 hitBox(vec3 o,vec3 d){vec3 inv=1.0/d;vec3 t0=(vec3(-0.5)-o)*inv;vec3 t1=(vec3(0.5)-o)*inv;vec3 a=min(t0,t1);vec3 b=max(t0,t1);return vec2(max(max(a.x,a.y),a.z),min(min(b.x,b.y),b.z));}
 void main(){
   vec3 d=normalize(vPos-uCam);vec2 b=hitBox(uCam,d);if(b.x>b.y)discard;b.x=max(b.x,0.0);
@@ -538,7 +586,16 @@ void main(){
     if(p.x<uCut)continue;
     vec3 tc=vec3(p.x+0.5,0.5-p.z,p.y+0.5);
     float zq=texture(uZ,tc).r*255.0;float dbz=zq-32.0;float a=0.0;vec3 col=vec3(0.0);
-    if(uField==0){a=smoothstep(uMin,uMin+6.0,dbz)*(0.18+0.82*clamp((dbz-uMin)/40.0,0.0,1.0));col=texture(uLut,vec2((zq+0.5)/256.0,0.5)).rgb;}
+    if(uCloud==1){   // cloud: white where the sun reaches, grey where the storm shades itself
+      a=smoothstep(uMin-6.0,uMin+6.0,dbz)*(0.45+0.55*clamp((dbz-uMin)/35.0,0.0,1.0));
+      if(a>0.002){float od=0.0;
+        for(int j=1;j<=6;j++){vec3 q=p+uSunDir*(0.03*float(j));vec3 qc=vec3(q.x+0.5,0.5-q.z,q.y+0.5);
+          if(qc.x<0.0||qc.y<0.0||qc.z<0.0||qc.x>1.0||qc.y>1.0||qc.z>1.0)break;
+          od+=smoothstep(uMin-6.0,uMin+6.0,texture(uZ,qc).r*255.0-32.0);}
+        float T=exp(-od*0.75),h=clamp(p.y+0.5,0.0,1.0);
+        col=uSunCol*T*1.05+uSky*(0.32+0.38*h);}
+    }
+    else if(uField==0){a=smoothstep(uMin,uMin+6.0,dbz)*(0.18+0.82*clamp((dbz-uMin)/40.0,0.0,1.0));col=texture(uLut,vec2((zq+0.5)/256.0,0.5)).rgb;}
     else if(uField==1){float fq=texture(uF,tc).r*255.0;float v=fq-64.0;a=smoothstep(12.0,18.0,dbz)*smoothstep(uMin,uMin+5.0,abs(v))*(0.25+0.75*clamp((abs(v)-uMin)/25.0,0.0,1.0));col=texture(uLut,vec2((fq+0.5)/256.0,0.5)).rgb;}
     else{float fq=texture(uF,tc).r*255.0;float c=fq/200.0;a=smoothstep(25.0,32.0,dbz)*(1.0-smoothstep(uMin-0.05,uMin,c))*(0.3+0.7*clamp((uMin-c)/0.25,0.0,1.0));col=texture(uLut,vec2((fq+0.5)/256.0,0.5)).rgb;}
     a=clamp(a*uOpacity*dt*60.0,0.0,1.0);
@@ -550,7 +607,9 @@ void main(){
   transparent:true,depthWrite:false,depthTest:false,side:THREE.BackSide});
 const volMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),volMat);volMesh.userData.keep=true;volMesh.renderOrder=20;volMesh.frustumCulled=false;
 const _inv=new THREE.Matrix4();
-function updateVolCam(){if(!volMesh.parent)return;volMesh.updateMatrixWorld();_inv.copy(volMesh.matrixWorld).invert();volMat.uniforms.uCam.value.copy(camera.position).applyMatrix4(_inv)}
+const _sd=new THREE.Vector3();
+function updateVolCam(){if(!volMesh.parent)return;volMesh.updateMatrixWorld();_inv.copy(volMesh.matrixWorld).invert();volMat.uniforms.uCam.value.copy(camera.position).applyMatrix4(_inv);
+  _sd.copy(SKY.dir).transformDirection(_inv);volMat.uniforms.uSunDir.value.copy(_sd)}
 let frameGroup=null,FRAME_LABELS=[];
 function dropFrame(){if(frameGroup){world.remove(frameGroup);disposeTree(frameGroup);frameGroup=null}FRAME_LABELS=[]}
 function buildFrame(G){   // GR2-style wireframe box with height marks every 5 km
@@ -569,7 +628,7 @@ function buildVolume(fr){
   volMesh.scale.set(W,H,W);volMesh.position.set(G.x0+W/2,H/2,-(G.y0+W/2));
   u.uZ.value=volTex(fr,'z');u.uF.value=st.data==='z'?u.uZ.value:volTex(fr,st.data);
   u.uLut.value=lutTex(st.data,st.volPal);u.uField.value={z:0,v:1,c:2}[st.data];u.uMin.value=st.vmin[st.data];
-  u.uOpacity.value=st.volOp/100;u.uSteps.value=VOL_STEPS[st.volQ];u.uCut.value=st.cut<=-150?-1:(st.cut-(G.x0+W/2))/W;
+  u.uCloud.value=st.grey&&st.data==='z'?1:0;u.uOpacity.value=st.volOp/100*(st.grey&&st.data==='z'?1.6:1);u.uSteps.value=VOL_STEPS[st.volQ];u.uCut.value=st.cut<=-150?-1:(st.cut-(G.x0+W/2))/W;
   storm.add(volMesh);
   if(st.volShells)buildShells(fr);
   buildFrame(G);
@@ -610,7 +669,7 @@ function drawChips(){
 function drawOpac(){const box=$('opac');box.innerHTML='';
   for(const[k,name,c]of SHELLS[st.data]){const id='op_'+st.data+'_'+k,v=st.op[st.data][k];
     const r=document.createElement('div');r.className='row';
-    r.innerHTML=`<label for="${id}"><i style="background:${st.grey?'#c4cad1':'#'+c.toString(16).padStart(6,'0')}"></i>${name}</label><input id="${id}" type="range" min="0" max="100" step="1" value="${v}"><output>${v===0?'off':v>=100?'solid':v+'%'}</output>`;
+    r.innerHTML=`<label for="${id}"><i style="background:${st.grey?'#eef1f4':'#'+c.toString(16).padStart(6,'0')}"></i>${name}</label><input id="${id}" type="range" min="0" max="100" step="1" value="${v}"><output>${v===0?'off':v>=100?'solid':v+'%'}</output>`;
     const inp=r.querySelector('input'),out=r.querySelector('output');
     inp.oninput=()=>{const n=+inp.value;st.op[st.data][k]=n;out.textContent=n===0?'off':n>=100?'solid':n+'%';later(render)};
     box.appendChild(r)}}
@@ -631,7 +690,8 @@ $('radarOp').oninput=()=>{st.radarOp=+$('radarOp').value;$('radarOpv').textConte
 $('lift').oninput=()=>{st.lift=+$('lift').value;$('liftv').textContent=st.lift+' km';storm.position.y=st.lift;if(st.view==='volume')later(render)};
 $('exag').oninput=()=>{st.exag=+$('exag').value;$('exagv').textContent=st.exag;storm.scale.y=st.exag;meta();if(st.view==='tilts'||st.view==='volume')later(render)};
 $('cut').oninput=()=>{st.cut=+$('cut').value;clip.constant=-st.cut;if(st.view==='volume')later(render);$('cutv').textContent=st.cut<=-150?'off':(st.cut<0?`${-st.cut} km W`:`${st.cut} km E`)};
-$('grey').onclick=()=>{st.grey=!st.grey;$('grey').setAttribute('aria-pressed',st.grey);drawOpac();render()};
+function setCloud(on){st.grey=on;$('grey').setAttribute('aria-pressed',on);$('vCloud').setAttribute('aria-pressed',on);drawOpac();render()}
+$('grey').onclick=()=>setCloud(!st.grey);$('vCloud').onclick=()=>setCloud(!st.grey);
 $('opReset').onclick=()=>{st.op=JSON.parse(JSON.stringify(OP_DEFAULT));drawOpac();render()};
 $('raise').onclick=()=>{st.raise=!st.raise;document.body.classList.toggle('raised',st.raise);$('raise').setAttribute('aria-pressed',st.raise);render();
   home()};
@@ -678,5 +738,6 @@ addEventListener('resize',resize);resize();drawScale();drawChips();drawOpac();sy
   for(const sp of LABELS){const d=camera.position.distanceTo(sp.position),h=Math.max(2.2,d*0.022);sp.scale.set(h*sp.userData.aspect,h,1)}
   renderer.render(scene,camera)})();
 </script>
+<script src="notice.js"></script>
 </body>
 </html>
