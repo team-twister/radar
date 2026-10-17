@@ -856,7 +856,7 @@ const D2=(()=>{
      to copy 15 (only the most extreme cores). So light rain stays low and strong cores stand tall, like RadarScope's 3D.
      Each copy is coloured by its own graphics filter (BoM pictures can't be read by the app, only drawn). Doppler wind stacks by
      wind speed instead (10 copies). Lower copies are drawn a bit darker so the sides of each tower show. */
-  const NZ=8,NV=5;   // reflectivity: 8 slices (every second BoM band), Doppler wind: 5
+  const NZ=15,NV=10;   // reflectivity: one slice per BoM band, Doppler wind: 10
   const B3={on:false,failed:false,F:[],cur:0,tag:'',S:0,P:800,spin:false,h:store.get('b3h1')??1,min:store.get('b3min')??0,
     };
   const ZLOW=[12,23,28,31,34,37,40,43,46,49,52,55,58,61,64];    // lower edge (dBZ) of each BoM band
@@ -877,8 +877,8 @@ const D2=(()=>{
         `<feComponentTransfer in="a" result="k"><feFuncA type="discrete" tableValues="${ta.join(' ')}"/></feComponentTransfer>`+
         `<feComposite in="c" in2="k" operator="in"/></filter>`};
     let h='';
-    for(let k=0;k<NZ;k++)h+=mk('b3z'+k,W,BANDS,j=>Math.floor(j/2),j=>o2.rs?col(ZMID[j]):BANDS[j],NZ,k,B3.min);
-    for(let k=0;k<NV;k++)h+=mk('b3v'+k,[-0.25,0.375,-1,0.875],VPAL,j=>Math.floor(Math.abs(j-9)/2),j=>o2.rs?vcol(j):VPAL[j],NV,k,0);
+    for(let k=0;k<NZ;k++)h+=mk('b3z'+k,W,BANDS,j=>j,j=>o2.rs?col(ZMID[j]):BANDS[j],NZ,k,B3.min);
+    for(let k=0;k<NV;k++)h+=mk('b3v'+k,[-0.25,0.375,-1,0.875],VPAL,j=>Math.abs(j-9),j=>o2.rs?vcol(j):VPAL[j],NV,k,0);
     $('b3defs').innerHTML=h;
   }
   /* The slices sit on the real 3D map (the same map as before), so zooming, turning and tilting are the map's own and you can
@@ -899,7 +899,7 @@ const D2=(()=>{
     return{x0:X(site.lon-b),x1:X(site.lon+b),y0:Y(site.lat+a),y1:Y(site.lat-a)}}
   // the camera's depth (w) of a world point: points behind or right next to the camera can't be drawn safely, so they're cut off
   const wOf=(P,X,Y,z)=>P[3]*X+P[7]*Y+P[11]*z+P[15];
-  const sliceZ=(k,n)=>0.028*B3.h*2*b3km()*1000*(k+1)/n+30;     // height of slice k in metres (same scale as before)
+  const sliceZ=(k,n)=>0.07*B3.h*2*b3km()*1000*(k+1)/n+30;   // the map's camera is further away than the old 3D view's, so towers are drawn taller     // height of slice k in metres (same scale as before)
   let crops=[];
   function b3crop(){
     if(!B3.on||!site)return;const sl=ov.children,n=sl.length;if(!n)return;
@@ -911,7 +911,7 @@ const D2=(()=>{
     const wpx=(x,y,z)=>wOf(P,pb.x0+x*sx,pb.y0+y*sy,z),dpr=window.devicePixelRatio||1;
     crops=[];
     // one sharpness for all slices (from the biggest cut), so they can share the camera placement
-    {const x0=Math.max(0,R.x0),x1=Math.min(512,R.x1),y0=Math.max(18,R.y0),y1=Math.min(487,R.y1);B3.f=Math.min(512/dpr/Math.max(1,x1-x0,y1-y0),2)}
+    {const x0=Math.max(0,R.x0),x1=Math.min(512,R.x1),y0=Math.max(18,R.y0),y1=Math.min(487,R.y1);B3.f=Math.min(768/dpr/Math.max(1,x1-x0,y1-y0),8)}   // sharper blocks when zoomed in
     for(let k=0;k<n;k++){const d=sl[k],z=sliceZ(k,n),wg=wpx(gx,gy,z);let cr=null;
       if(wg>eps*1.5){let s=1;
         for(const[x,y]of[[R.x0,R.y0],[R.x1,R.y0],[R.x0,R.y1],[R.x1,R.y1]]){const w=wpx(x,y,z);if(w<eps)s=Math.min(s,(wg-eps)/(wg-w))}
