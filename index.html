@@ -164,24 +164,10 @@ body.now .frames{display:none!important}
 .keysheet p{margin:0;color:var(--muted);font-size:.84rem;line-height:1.45}
 .keysheet button{font:600 .9rem var(--ui);color:#000;background:var(--accent);border:0;border-radius:11px;padding:11px;cursor:pointer}
 /* ---- BoM 3D: BoM's picture cut into slices by strength and stacked in 3D ---- */
-#b3d{position:fixed;inset:0;z-index:1;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
-body.b3:not(.b3pick) #map{visibility:hidden}
-body.b3pick #b3d{display:none}
-.b3z,.b3v{position:absolute;inset:0}
-.b3w{position:absolute;transform-style:preserve-3d;transform-origin:50% 50%;pointer-events:none}
-.b3g{position:absolute;inset:0;overflow:hidden;border-radius:4px;background:#0b0f14}
-.b3g img{position:absolute;max-width:none}
-.b3g .shade{position:absolute;inset:0;background:rgba(0,0,0,.28)}
-.b3det{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden}
-.b3det img{position:absolute;max-width:none}
-.b3det .shade{position:absolute;inset:0;background:rgba(0,0,0,.28)}
-.b3o{position:absolute;inset:0;transform:translateZ(0.5px)}
-.b3o .ring{position:absolute;inset:0;border-radius:50%;border:1.5px dashed rgba(90,200,250,.8)}
-.b3o .me{position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px;background:var(--live);border:2px solid #fff;transform:rotate(45deg)}
-.b3s{position:absolute;left:0;top:0;transform-origin:0 0}
-.b3s svg{display:block;overflow:visible}
-.b3hint{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0px));font:500 .74rem var(--ui);color:#ddd;background:rgba(30,30,32,.85);padding:6px 11px;border-radius:9px;transition:opacity .6s;pointer-events:none;white-space:nowrap}
-.b3hint.gone{opacity:0}
+#b3ov{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:1}
+.b3s{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.b3s svg{display:block;overflow:hidden}
+.b3s image{image-rendering:pixelated}
 body.b3 .dock-head .fold{order:2}
 body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
 </style>
@@ -189,8 +175,7 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
 <body>
 <div id="map"></div>
 <div id="map2d" hidden></div>
-<div id="b3d" hidden aria-label="3D radar. Drag to turn, pinch to zoom, two fingers to move."><div class="b3z" id="b3z"><div class="b3v" id="b3v"><div class="b3w" id="b3w"><div class="b3g" id="b3g"></div><div class="b3o" id="b3o"></div></div></div></div><div class="b3hint" id="b3hint">Drag to turn · pinch to zoom · two fingers to move</div></div>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><image id="b3img" x="0" y="0" width="512" height="512" preserveAspectRatio="none" style="image-rendering:pixelated"/><g id="b3defs"></g></defs></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><g id="b3defs"></g></defs></svg>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="rsZ" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
     <feColorMatrix id="rsZm" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
@@ -447,7 +432,7 @@ function selectSite(s,{fly,first}={}){
   siteMarkers.forEach(o=>o.el.classList.toggle('active',o.s===s));
   showSites($('sitesBtn').getAttribute('aria-pressed')==='true');
   map.getSource('ring').setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(s[2],s[3],RANGE_KM)}});
-  if(b3on()){document.body.classList.remove('b3pick');status(null);showSites(false);D2.b3.site(s[2],s[3]);return}
+  if(b3on()){D2.b3.site(s[2],s[3]);return}
   if(fly)home(first?1800:1200);
   update(true);
 }
@@ -856,7 +841,7 @@ const D2=(()=>{
       m.on('click',()=>pick(s,true));markers.push(m)}}
   function pick(s,fly){site=s;head();drawMarkers();if(fly)fitTo(vBounds(s,o2.product==='z'&&o2.range!=='nat'?+o2.range:RKM),true);if(o2.product==='v'){if(s.doppler)refresh(true);else setProduct('z')}else if(o2.range!=='nat')refresh(true)}
   async function setProduct(p){if(p==='v'&&!(site&&site.doppler))return;o2.product=p;
-    if(st.view!=='2d'){b3build();b3ground();head();return b3load(true)}
+    if(st.view!=='2d'){b3build();ring();head();return b3load(true)}
     head();
     if(p==='v'){const b=L.latLngBounds(vBounds(site));if(!map2.getBounds().intersects(b))fitTo(b)}await refresh(true)}
   function fitTo(b,anim){const dh=document.querySelector('.dock').getBoundingClientRect().height,th=document.querySelector('header').getBoundingClientRect().height;
@@ -869,7 +854,7 @@ const D2=(()=>{
      wind speed instead (10 copies). Lower copies are drawn a bit darker so the sides of each tower show. */
   const NZ=15,NV=10;
   const B3={on:false,failed:false,F:[],cur:0,tag:'',S:0,P:800,spin:false,h:store.get('b3h1')??1,min:store.get('b3min')??0,
-    cam:{tilt:52,bearing:-15,zoom:1,gx:0,gy:0}};
+    };
   const ZLOW=[12,23,28,31,34,37,40,43,46,49,52,55,58,61,64];    // lower edge (dBZ) of each BoM band
   const PRE=new Map();
   function preload(u){if(PRE.has(u))return;const im=new Image();im.referrerPolicy='no-referrer';im.src=u;PRE.set(u,im);
@@ -892,80 +877,70 @@ const D2=(()=>{
     for(let k=0;k<NV;k++)h+=mk('b3v'+k,[-0.25,0.375,-1,0.875],VPAL,j=>Math.abs(j-9),j=>o2.rs?vcol(j):VPAL[j],NV,k,0);
     $('b3defs').innerHTML=h;
   }
+  /* The slices sit on the real 3D map (the same map as before), so zooming, turning and tilting are the map's own and you can
+     zoom right in to street level. Every time the map moves, each slice is placed at its height using the map's camera.
+     Only the part of the radar picture near the screen is drawn (Safari drops colour filters that get too big). */
+  const ov=document.createElement('div');ov.id='b3ov';map.getCanvasContainer().appendChild(ov);
+  let crop=null;      // part of the radar picture being drawn: [x,y,w,h] in picture pixels, plus box size
   function b3build(){
-    const w=$('b3w');w.querySelectorAll('.b3s').forEach(e=>e.remove());
-    const v=o2.product==='v',n=v?NV:NZ,SZ=512/(window.devicePixelRatio||1);
-    for(let k=0;k<n;k++){const d=document.createElement('div');d.className='b3s';d.style.width=d.style.height=SZ+'px';
-      d.innerHTML=`<svg viewBox="0 0 512 512" width="${SZ}" height="${SZ}"><use href="#b3img" filter="url(#b3${v?'v':'z'}${k})" clip-path="url(#bomTrim)"/></svg>`;
-      w.appendChild(d)}
-    $('b3minRow').hidden=v;b3place();
+    ov.innerHTML='';const v=o2.product==='v',n=v?NV:NZ,f=B3.F[B3.cur];
+    for(let k=0;k<n;k++){const d=document.createElement('div');d.className='b3s';
+      d.innerHTML=`<svg preserveAspectRatio="none"><image width="512" height="512" preserveAspectRatio="none" filter="url(#b3${v?'v':'z'}${k})" clip-path="url(#bomTrim)"${f?` href="${f.url}"`:''}/></svg>`;
+      ov.appendChild(d)}
+    $('b3minRow').hidden=v;crop=null;b3crop();
   }
+  // where the radar picture sits on the map (world pixels at the current zoom)
+  function picBox(){const km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180)),ws=map.transform.worldSize;
+    const X=lon=>(lon+180)/360*ws,Y=lat=>{const q=lat*Math.PI/180;return(1-Math.log(Math.tan(q)+1/Math.cos(q))/Math.PI)/2*ws};
+    return{x0:X(site.lon-b),x1:X(site.lon+b),y0:Y(site.lat+a),y1:Y(site.lat-a)}}
+  // the camera's depth (w) of a world point: points behind or right next to the camera can't be drawn safely, so they're cut off
+  const wOf=(P,X,Y,z)=>P[3]*X+P[7]*Y+P[11]*z+P[15];
+  const sliceZ=(k,n)=>0.028*B3.h*2*b3km()*1000*(k+1)/n+30;     // height of slice k in metres (same scale as before)
+  let crops=[];
+  function b3crop(){
+    if(!B3.on||!site)return;const sl=ov.children,n=sl.length;if(!n)return;
+    const bb=map.getBounds(),km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180));
+    const W0=site.lon-b,N0=site.lat+a,mx=(bb.getEast()-bb.getWest())*0.12,my=(bb.getNorth()-bb.getSouth())*0.12;
+    const R={x0:(bb.getWest()-mx-W0)/(2*b)*512,x1:(bb.getEast()+mx-W0)/(2*b)*512,y0:(N0-(bb.getNorth()+my))/(2*a)*512,y1:(N0-(bb.getSouth()-my))/(2*a)*512};
+    const c=map.getCenter(),gx=(c.lng-W0)/(2*b)*512,gy=(N0-c.lat)/(2*a)*512;
+    const P=map.transform.pixelMatrix,pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.12;
+    const wpx=(x,y,z)=>wOf(P,pb.x0+x*sx,pb.y0+y*sy,z),dpr=window.devicePixelRatio||1;
+    crops=[];
+    for(let k=0;k<n;k++){const d=sl[k],z=sliceZ(k,n),wg=wpx(gx,gy,z);let cr=null;
+      if(wg>eps*1.5){let s=1;
+        for(const[x,y]of[[R.x0,R.y0],[R.x1,R.y0],[R.x0,R.y1],[R.x1,R.y1]]){const w=wpx(x,y,z);if(w<eps)s=Math.min(s,(wg-eps)/(wg-w))}
+        const x0=Math.max(0,Math.floor(gx+s*(R.x0-gx))),x1=Math.min(512,Math.ceil(gx+s*(R.x1-gx))),y0=Math.max(18,Math.floor(gy+s*(R.y0-gy))),y1=Math.min(487,Math.ceil(gy+s*(R.y1-gy)));
+        if(x1-x0>=1&&y1-y0>=1){const w=x1-x0,h=y1-y0,f=1024/dpr/Math.max(w,h);cr={x:x0,y:y0,w,h,ew:w*f,eh:h*f}}}
+      crops.push(cr);d.style.display=cr?'':'none';if(!cr)continue;
+      const svg=d.firstChild;svg.setAttribute('viewBox',`${cr.x} ${cr.y} ${cr.w} ${cr.h}`);svg.setAttribute('width',cr.ew);svg.setAttribute('height',cr.eh);d.style.width=cr.ew+'px';d.style.height=cr.eh+'px';
+      const fl=document.getElementById(`b3${o2.product==='v'?'v':'z'}${k}`);if(fl){fl.setAttribute('x',cr.x-1);fl.setAttribute('y',cr.y-1);fl.setAttribute('width',cr.w+2);fl.setAttribute('height',cr.h+2)}}
+    crop={zoom:map.getZoom()};b3place();
+  }
+  const mul=(A,B)=>{const o=new Float64Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=A[k*4+r]*B[c*4+k];o[c*4+r]=s}return o};
+  // place every slice using the map camera; returns false if a slice has drifted too close to the camera (then it gets re-cut)
   function b3place(){
-    const sl=[...$('b3w').querySelectorAll('.b3s')],n=sl.length,SZ=512/(window.devicePixelRatio||1),sc=B3.S/SZ,H=B3.S*0.028*B3.h;
-    sl.forEach((d,k)=>{d.style.transform=`translateZ(${(0.8+H*(k+1)/n).toFixed(2)}px) scale(${sc.toFixed(4)})`});
+    if(!B3.on||!crop||!site)return true;const sl=ov.children,n=sl.length;if(!n)return true;
+    const P=map.transform.pixelMatrix,pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.06;let ok=true;
+    for(let k=0;k<n;k++){const cr=crops[k];if(!cr)continue;const z=sliceZ(k,n),X0=pb.x0+cr.x*sx,Y0=pb.y0+cr.y*sy,X1=X0+cr.w*sx,Y1=Y0+cr.h*sy;
+      if(Math.min(wOf(P,X0,Y0,z),wOf(P,X1,Y0,z),wOf(P,X0,Y1,z),wOf(P,X1,Y1,z))<eps){ok=false;sl[k].style.visibility='hidden';continue}
+      sl[k].style.visibility='';
+      const M=mul(P,[cr.w/cr.ew*sx,0,0,0, 0,cr.h/cr.eh*sy,0,0, 0,0,1,0, X0,Y0,z,1]);
+      sl[k].style.transform=`matrix3d(${Array.from(M,v=>+v.toPrecision(9)).join(',')})`}
+    return ok;
   }
-  /* the ground: satellite (or dark) map pieces laid out under the radar picture.
-     When you zoom in, a sharper patch of map is loaded for just the part you're looking at, so the ground gets more detailed
-     as you zoom (like a normal map), instead of the far-out map just being blown up. */
-  function geo(){const S=B3.S,km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180));return{S,a,b,W0:site.lon-b,N0:site.lat+a}}
-  // map pieces at zoom level z covering ground area gx0..gx1, gy0..gy1 (ground units), drawn into a box at (X0,Y0) scaled by r
-  function tilesHTML(z,gx0,gy0,gx1,gy1,X0,Y0,r){
-    const{S,a,b,W0,N0}=geo(),n=2**z;
-    const lonAt=x=>W0+x/S*2*b,latAt=y=>N0-y/S*2*a;
-    const tx=lon=>(lon+180)/360*n,ty=lat=>{const q=lat*Math.PI/180;return(1-Math.log(Math.tan(q)+1/Math.cos(q))/Math.PI)/2*n};
-    const tlat=y=>Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI;
-    const x0=Math.floor(tx(lonAt(gx0))),x1=Math.floor(tx(lonAt(gx1))),y0=Math.floor(ty(latAt(gy0))),y1=Math.floor(ty(latAt(gy1)));
-    const layers=st.dark?['Canvas/World_Dark_Gray_Base']:['World_Imagery','Reference/World_Boundaries_and_Places'];
-    let h='';
-    layers.forEach((ly,li)=>{if(li===1)h+='<div class="shade"></div>';
-      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
-        const L=(((x/n*360-180)-W0)/(2*b)*S-X0)*r,Rr=((((x+1)/n*360-180)-W0)/(2*b)*S-X0)*r,T=((N0-tlat(y))/(2*a)*S-Y0)*r,Bt=((N0-tlat(y+1))/(2*a)*S-Y0)*r;
-        h+=`<img alt="" src="${ESRI}${ly}/MapServer/tile/${z}/${y}/${x}" style="left:${L.toFixed(1)}px;top:${T.toFixed(1)}px;width:${(Rr-L+0.6).toFixed(1)}px;height:${(Bt-T+0.6).toFixed(1)}px">`}});
-    return{h,count:(x1-x0+1)*(y1-y0+1)};
-  }
-  function b3ground(){
-    if(!site||!B3.S)return;const{S,b}=geo(),z=Math.max(5,Math.min(11,Math.round(Math.log2(4*360/(2*b)))));
-    $('b3g').innerHTML=tilesHTML(z,0,0,S,S,0,0,1).h;
-    $('b3o').innerHTML=(o2.ring?'<div class="ring"></div>':'')+'<i class="me"></i>';
-    B3.det=null;$('b3w').querySelectorAll('.b3det').forEach(e=>e.remove());b3detailSoon();
-  }
-  let detT=null;function b3detailSoon(){clearTimeout(detT);detT=setTimeout(b3detail,220)}
-  function b3detail(){
-    if(!B3.on||!site||!B3.S)return;const c=B3.cam,w=$('b3w'),old=[...w.querySelectorAll('.b3det')];
-    const drop=()=>old.forEach(e=>e.remove());
-    if(c.zoom<1.4){drop();B3.det=null;return}
-    const{S,b}=geo(),dpr=window.devicePixelRatio||1,r=c.zoom/dpr;      // r = sharpness: box pixels per ground unit
-    const hb=document.querySelector('header').getBoundingClientRect().bottom,dt=document.querySelector('.dock').getBoundingClientRect().top;
-    const half=Math.max(innerWidth,dt-hb)/2/c.zoom*1.35/Math.max(0.35,Math.cos(c.tilt*Math.PI/180));
-    const cxg=S/2-c.gx,cyg=S/2-c.gy;
-    const gx0=Math.max(0,cxg-half),gy0=Math.max(0,cyg-half),gx1=Math.min(S,cxg+half),gy1=Math.min(S,cyg+half);
-    if(gx1<=gx0||gy1<=gy0){drop();return}
-    // skip if the patch already showing still covers this view at this sharpness
-    const d=B3.det;if(d&&Math.abs(Math.log(d.zoom/c.zoom))<0.3&&gx0>=d.gx0-1&&gy0>=d.gy0-1&&gx1<=d.gx1+1&&gy1<=d.gy1+1)return;
-    let z=Math.round(Math.log2(360*S*r/(2*b*256)));z=Math.max(6,Math.min(17,z));
-    let t;for(;;){t=tilesHTML(z,gx0,gy0,gx1,gy1,gx0,gy0,r);if(t.count<=49||z<=6)break;z--}
-    const el=document.createElement('div');el.className='b3det';
-    el.style.width=((gx1-gx0)*r).toFixed(1)+'px';el.style.height=((gy1-gy0)*r).toFixed(1)+'px';
-    el.style.transform=`translate3d(${gx0.toFixed(1)}px,${gy0.toFixed(1)}px,0.3px) scale(${(1/r).toFixed(5)})`;
-    el.innerHTML=t.h;w.insertBefore(el,$('b3o'));
-    B3.det={zoom:c.zoom,gx0,gy0,gx1,gy1};
-    // keep the old patch until the new one has loaded, so the ground never flashes
-    const imgs=[...el.querySelectorAll('img')];let left=imgs.length;const done=()=>{if(--left<=0)drop()};
-    if(!left)drop();imgs.forEach(im=>{if(im.complete)done();else{im.onload=im.onerror=done}});setTimeout(drop,2500);
-  }
-  function b3cam(){const c=B3.cam;
-    $('b3z').style.transform=`scale(${c.zoom.toFixed(4)})`;b3detailSoon();   // zoom = make the whole finished 3D picture bigger, the camera never moves
-    $('b3w').style.transform=`rotateX(${c.tilt.toFixed(2)}deg) rotateZ(${c.bearing.toFixed(2)}deg) translate(${c.gx.toFixed(1)}px,${c.gy.toFixed(1)}px)`}
-  function b3layout(){
-    if(!B3.on)return;
-    const hb=document.querySelector('header').getBoundingClientRect().bottom,dt=document.querySelector('.dock').getBoundingClientRect().top;
-    const free=Math.max(160,dt-hb),cx=innerWidth/2,cy=hb+free*0.5;
-    const S=Math.round(Math.min(innerWidth*0.96,free*1.7,900));
-    B3.P=Math.max(700,S*1.6);const v=$('b3v');v.style.perspective=B3.P+'px';v.style.perspectiveOrigin=`${cx}px ${cy}px`;$('b3z').style.transformOrigin=`${cx}px ${cy}px`;
-    const w=$('b3w');w.style.left=(cx-S/2)+'px';w.style.top=(cy-S/2)+'px';w.style.width=w.style.height=S+'px';
-    if(S!==B3.S){B3.S=S;b3ground();b3place()}b3cam();
-  }
-  function b3reset(soft){Object.assign(B3.cam,{tilt:52,bearing:-15,zoom:1,gx:0,gy:0});if(!soft)b3cam()}
+  let lastCrop=0;
+  map.on('move',()=>{if(!B3.on)return;
+    const ok=b3place();
+    if((!ok||(crop&&Math.abs(map.getZoom()-crop.zoom)>0.6))&&Date.now()-lastCrop>150){lastCrop=Date.now();b3crop()}});
+  map.on('moveend',()=>{if(B3.on)b3crop()});
+  map.on('resize',()=>{if(B3.on)b3crop()});
+  function ring(){const src=map.getSource('ring');if(!src||!site)return;
+    src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(site.lat,site.lon,b3km())}});
+    map.setLayoutProperty('ring','visibility',o2.ring?'visible':'none')}
+  function b3home(dur=1200){if(!site)return;const km=b3km(),r=circle(site.lat,site.lon,km*0.95,24),lo=r.map(p=>p[0]),la=r.map(p=>p[1]);
+    const dockH=document.querySelector('.dock').getBoundingClientRect().height;
+    const cam=map.cameraForBounds([[Math.min(...lo),Math.min(...la)],[Math.max(...lo),Math.max(...la)]],{padding:{top:90,bottom:Math.min(dockH+10,innerHeight*0.55),left:10,right:10}});
+    if(cam)map.easeTo({...cam,pitch:55,bearing:-15,duration:dur})}
   function b3head(){
     if(!B3.on||!site)return;const v=o2.product==='v',f=B3.F[B3.cur];
     $('hName').textContent=site.name;
@@ -974,11 +949,14 @@ const D2=(()=>{
     $('pZ').setAttribute('aria-pressed',!v);$('pV').setAttribute('aria-pressed',v);$('pV').disabled=!site.doppler;
     $('zKey2d').hidden=v;$('vKey2d').hidden=!v;
   }
-  function b3show(i){if(B3.F.length){B3.cur=Math.max(0,Math.min(B3.F.length-1,i));$('b3img').setAttribute('href',B3.F[B3.cur].url)}else $('b3img').removeAttribute('href');b3head();syncTime()}
+  // playback: every slice gets the new picture (each slice has its own copy, which Safari updates reliably)
+  function b3show(i){
+    if(B3.F.length)B3.cur=Math.max(0,Math.min(B3.F.length-1,i));const f=B3.F[B3.cur];
+    for(const d of ov.children){const im=d.firstChild.firstChild;if(f)im.setAttribute('href',f.url);else im.removeAttribute('href')}
+    b3head();syncTime()}
   async function b3load(full){
     if(!B3.on||!site)return false;
-    const v=o2.product==='v';
-    if(v&&!site.doppler){o2.product='z';b3build();b3ground()}
+    if(o2.product==='v'&&!site.doppler){o2.product='z';b3build();ring()}
     const letter=o2.product==='v'?'I':(LETTER[o2.range]||'3'),tag=site.id+letter,what=o2.product==='v'?'Doppler wind':'reflectivity';
     if(B3.tag!==tag){B3.tag=tag;B3.F=[];B3.cur=0;b3show(0)}
     if(!B3.F.length)status(`Finding ${site.name} ${what}…`);
@@ -990,49 +968,29 @@ const D2=(()=>{
     B3.F=list.map(([t,url])=>({t,url}));B3.F.forEach(f=>preload(f.url));
     status(null);b3show(full||atEnd?B3.F.length-1:B3.cur);return true;
   }
-  function b3spin(){if(!B3.spin||!B3.on)return;B3.cam.bearing+=0.12;b3cam();requestAnimationFrame(b3spin)}
-  function b3stopSpin(){if(B3.spin){B3.spin=false;$('b3spin').setAttribute('aria-pressed',false)}}
-  // finger controls: one finger turns and tilts, two fingers pinch to zoom and slide to move, double-tap resets
-  (()=>{
-    const el=$('b3d'),pts=new Map();let last=null,lastTap=0;
-    const pair=()=>{const[a,b]=[...pts.values()];return{d:Math.hypot(a.x-b.x,a.y-b.y),x:(a.x+b.x)/2,y:(a.y+b.y)/2}};
-    const hint=()=>$('b3hint').classList.add('gone');
-    el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(_){}pts.set(e.pointerId,{x:e.clientX,y:e.clientY});b3stopSpin();
-      last=pts.size===2?pair():null;
-      if(pts.size===1){const now=Date.now();if(now-lastTap<300){b3reset();lastTap=0}else lastTap=now}});
-    el.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;const c=B3.cam;
-      if(pts.size===1){c.bearing-=dx*0.35;c.tilt=Math.max(0,Math.min(80,c.tilt-dy*0.3));hint()}
-      else if(pts.size===2){const q=pair();if(last){c.zoom=Math.max(0.5,Math.min(60,c.zoom*q.d/Math.max(10,last.d)));
-          let mx=(q.x-last.x)/c.zoom,my=(q.y-last.y)/c.zoom/Math.max(0.3,Math.cos(c.tilt*Math.PI/180));
-          const r=-c.bearing*Math.PI/180;c.gx+=mx*Math.cos(r)-my*Math.sin(r);c.gy+=mx*Math.sin(r)+my*Math.cos(r);
-          const lim=B3.S*0.6;c.gx=Math.max(-lim,Math.min(lim,c.gx));c.gy=Math.max(-lim,Math.min(lim,c.gy))}last=q;hint()}
-      b3cam()});
-    const up=e=>{pts.delete(e.pointerId);last=pts.size===2?pair():null};
-    el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
-    el.addEventListener('wheel',e=>{e.preventDefault();B3.cam.zoom=Math.max(0.5,Math.min(60,B3.cam.zoom*Math.exp(-e.deltaY*0.0015)));b3cam();hint()},{passive:false});
-    el.addEventListener('gesturestart',e=>e.preventDefault());
-    addEventListener('resize',()=>b3layout());
-    new ResizeObserver(()=>b3layout()).observe(document.querySelector('.dock'));
-    setInterval(()=>{if(!document.hidden&&B3.on)b3load(false)},120e3);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&B3.on)b3load(false)});
-  })();
-  $('b3h').value=B3.h;$('b3hv').textContent=B3.h;$('b3h').oninput=()=>{B3.h=+$('b3h').value;$('b3hv').textContent=B3.h;store.set('b3h1',B3.h);b3place()};
+  setInterval(()=>{if(!document.hidden&&B3.on)b3load(false)},120e3);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&B3.on)b3load(false)});
+  $('b3h').value=B3.h;$('b3hv').textContent=B3.h;$('b3h').oninput=()=>{B3.h=+$('b3h').value;$('b3hv').textContent=B3.h;store.set('b3h1',B3.h);b3crop()};
   $('b3min').value=B3.min;$('b3minv').textContent=ZLOW[B3.min];
-  $('b3min').oninput=()=>{B3.min=+$('b3min').value;$('b3minv').textContent=ZLOW[B3.min];store.set('b3min',B3.min);clearTimeout(B3.mt);B3.mt=setTimeout(b3filters,120)};
-  $('b3reset').onclick=()=>b3reset();
-  $('b3spin').onclick=()=>{B3.spin=!B3.spin;$('b3spin').setAttribute('aria-pressed',B3.spin);if(B3.spin)b3spin()};
+  $('b3min').oninput=()=>{B3.min=+$('b3min').value;$('b3minv').textContent=ZLOW[B3.min];store.set('b3min',B3.min);clearTimeout(B3.mt);B3.mt=setTimeout(()=>{b3filters();b3crop()},120)};
+  $('b3reset').onclick=()=>b3home(900);
+  $('b3spin').onclick=()=>$('spin').click();
   b3filters();
+  // the old 3D blocks layer is cleared while BoM 3D is showing
+  const clearBlocks=()=>{for(const id of['storm','shadow']){const s=map.getSource(id);if(s)s.setData({type:'FeatureCollection',features:[]})}};
   const b3={
     async enter(lat,lon){
-      B3.on=true;$('b3d').hidden=false;await loadSites();
+      B3.on=true;ov.hidden=false;await loadSites();
       const nn=nearest(lat,lon,sites);if(nn&&nn[0]!==site){site=nn[0];B3.tag=''}if(!site)site=sites[0];
       if(o2.product==='v'&&!site.doppler)o2.product='z';
-      b3build();b3layout();b3ground();b3head();syncTime();await b3load(true);
+      const go=()=>{if(!B3.on)return;clearBlocks();ring();b3home(1500)};if(map.loaded())go();else map.once('load',go);
+      b3build();b3head();syncTime();await b3load(true);
     },
-    leave(){B3.on=false;b3stopSpin();$('b3d').hidden=true},
-    site(lat,lon){const nn=nearest(lat,lon,sites);if(!nn)return;site=nn[0];B3.cam.gx=B3.cam.gy=0;b3cam();
-      if(o2.product==='v'&&!site.doppler){o2.product='z';b3build()}b3ground();b3head();b3load(true)},
-    ground(){b3ground()},
+    leave(){B3.on=false;ov.hidden=true;ov.innerHTML='';crop=null;
+      const src=map.getSource('ring');if(src&&activeSite){src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(activeSite[2],activeSite[3],RANGE_KM)}});map.setLayoutProperty('ring','visibility','visible')}},
+    site(lat,lon){const nn=nearest(lat,lon,sites);if(!nn)return;site=nn[0];
+      if(o2.product==='v'&&!site.doppler)o2.product='z';b3build();ring();b3home(1200);b3head();b3load(true)},
+    ground(){},
     frames:()=>B3.F,cur:()=>B3.cur,show:b3show,
     failed:()=>B3.failed,retry(){B3.failed=false},
     active:()=>B3.on,
@@ -1051,11 +1009,11 @@ const D2=(()=>{
     frames:()=>F(),cur:()=>cur,map:()=>map2,
     setFrames(n){o2.frames=n;store.set('frames2d',n);refresh(true)},
     setRange(r){o2.range=r;store.set('range2d',r);if(o2.product==='v'){o2.product='z'}
-      if(st.view!=='2d'){b3reset(true);b3build();b3ground();head();b3load(true);return}
+      if(st.view!=='2d'){b3build();ring();b3home(900);head();b3load(true);return}
       head();
       if(r!=='nat'&&site)fitTo(vBounds(site,+r),true);else if(r==='nat')fitTo([[-44,112],[-10,154]],true);refresh(true)},
-    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();drawVbar();head();b3filters();if(o2.src==='rv'&&map2)zF.forEach(f=>f.layer.redraw());return o2.rs},
-    toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();if(B3.on)b3ground();return o2.ring},
+    toggleRS(){o2.rs=!o2.rs;store.set('rs2d',o2.rs);drawBands();drawVbar();head();b3filters();b3crop();if(o2.src==="rv"&&map2)zF.forEach(f=>f.layer.redraw());return o2.rs},
+    toggleRing(){o2.ring=!o2.ring;store.set('ring2d',o2.ring);head();if(B3.on)ring();return o2.ring},
     aus(){this.setRange('nat');$('range2d').value='nat'},
     refreshNow(){vCache.clear();if(o2.src==='rv'){o2.src='bom';if(map2)head()}refresh(true)},
     keyURL:()=>site?`${BOM}/radar/IDR${String(site.id).padStart(2,'0')}I.gif`:'',
@@ -1117,10 +1075,8 @@ $('time').oninput=()=>{stopPlay();goTo(+$('time').value)};
 // header buttons act on whichever map is showing
 $('sitesBtn').onclick=()=>{if(st.view==='2d'){$('sitesBtn').setAttribute('aria-pressed',D2.toggleSites());return}
   const on=$('sitesBtn').getAttribute('aria-pressed')!=='true';
-  if(b3on()){document.body.classList.toggle('b3pick',on);stopPlay();
-    if(on){map.resize();const s=activeSite;map.jumpTo({center:s?[s[3],s[2]]:[149,-27],zoom:5.2,pitch:0,bearing:0});status('Tap a radar to see it in 3D.')}else status(null)}
   showSites(on)};
-const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style();if(D2.b3.active())D2.b3.ground()};
+const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style();0};
 
 st.mode='now';setMode('now');
 if(st.view==='2d')map.once('idle',()=>setView('2d'));
