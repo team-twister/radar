@@ -914,7 +914,7 @@ const D2=(()=>{
      angle, it is shifted toward you), so each slice gets its own cut, found by following the screen corners down to that slice's
      height. (The previous version cut every slice to the patch visible on the ground, which chopped the near half off the higher
      slices: that's why the towers looked flat.) */
-  function b3crop(){
+  function b3crop(force=true){
     if(!B3.on||!site)return;const sl=ov.children,n=sl.length;if(!n)return;
     const P=map.transform.pixelMatrix,Pi=inv4(P);if(!Pi)return;
     const pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.12,dpr=window.devicePixelRatio||1;
@@ -924,13 +924,13 @@ const D2=(()=>{
     const hit=(x,y,z)=>{const a=tx4(Pi,[x,y,0,1]),b=tx4(Pi,[x,y,1,1]);const A=a.map(v=>v/a[3]),B=b.map(v=>v/b[3]);
       const dz=B[2]-A[2];if(Math.abs(dz)<1e-9)return null;const t=(z-A[2])/dz;
       const X=A[0]+t*(B[0]-A[0]),Y=A[1]+t*(B[1]-A[1]);if(wOf(P,X,Y,z)<=0)return null;return[(X-pb.x0)/sx,(Y-pb.y0)/sy]};
-    crops=[];let big=1;
+    let big=1;
     const cuts=[];
     for(let k=0;k<n;k++){const z=sliceZ(k,n),g=hit(W/2,H/2,z);if(!g){cuts.push(null);continue}
       let x0=g[0],x1=g[0],y0=g[1],y1=g[1],sky=false;
       for(const[x,y]of pts){const h=hit(x,y,z);if(!h){sky=true;continue}x0=Math.min(x0,h[0]);x1=Math.max(x1,h[0]);y0=Math.min(y0,h[1]);y1=Math.max(y1,h[1])}
       if(sky){y0=Math.min(y0,0);y1=Math.max(y1,512);x0=Math.min(x0,0);x1=Math.max(x1,512)}   // looking toward the horizon: take the far part too
-      const mx=(x1-x0)*0.04,my=(y1-y0)*0.04;x0-=mx;x1+=mx;y0-=my;y1+=my;
+      const mx=(x1-x0)*0.1,my=(y1-y0)*0.1;x0-=mx;x1+=mx;y0-=my;y1+=my;
       // keep every corner safely in front of the camera
       const wg=wpx(g[0],g[1],z);let s=1;
       if(wg<=eps*1.5){cuts.push(null);continue}
@@ -938,7 +938,12 @@ const D2=(()=>{
       const c={x0:Math.max(0,Math.floor(g[0]+s*(x0-g[0]))),x1:Math.min(512,Math.ceil(g[0]+s*(x1-g[0]))),y0:Math.max(18,Math.floor(g[1]+s*(y0-g[1]))),y1:Math.min(487,Math.ceil(g[1]+s*(y1-g[1])))};
       if(c.x1-c.x0<1||c.y1-c.y0<1){cuts.push(null);continue}
       big=Math.max(big,c.x1-c.x0,c.y1-c.y0);cuts.push(c)}
-    B3.f=Math.max(1,256/big)/dpr;   // drawn at the picture's own resolution, like the original 3D view (soft, smooth look)   // one sharpness for all slices so they share the camera placement; sharper blocks when zoomed in
+    // drawn at the picture's own resolution like the original 3D view (soft look), a bit sharper when zoomed right in.
+    // Sharpness only changes in big steps, so the picture isn't redrawn slightly differently after every little move.
+    const nf=2**Math.round(Math.log2(Math.max(1,256/big)))/dpr;
+    // if what's on screen is still inside the current cut at the same sharpness, keep it as it is (re-cutting is what made pixels jump)
+    if(!force&&nf===B3.f&&crops.length===n&&cuts.every((c,k)=>{const o=crops[k];if(!c)return!o;return o&&c.x0>=o.x-0.5&&c.y0>=o.y-0.5&&c.x1<=o.x+o.w+0.5&&c.y1<=o.y+o.h+0.5})&&b3place())return;
+    B3.f=nf;crops=[];
     for(let k=0;k<n;k++){const d=sl[k],c=cuts[k];let cr=null;
       if(c){const w=c.x1-c.x0,h=c.y1-c.y0;cr={x:c.x0,y:c.y0,w,h,ew:w*B3.f,eh:h*B3.f}}
       crops.push(cr);d.style.display=cr?'':'none';if(!cr)continue;
@@ -972,7 +977,7 @@ const D2=(()=>{
   function b3lens(){const f=lensFor(map.getPitch());if(Math.abs(map.transform.fov-f)>0.3){map.transform.fov=f;map.triggerRepaint()}}
   map.on('move',()=>{if(!B3.on)return;b3lens();
     b3place()});   // only re-cut when the map stops moving (re-cutting while it moves made the phone run out of memory)
-  map.on('moveend',()=>{if(B3.on)b3crop()});
+  map.on('moveend',()=>{if(B3.on)b3crop(false)});
   map.on('resize',()=>{if(B3.on)b3crop()});
   function ring(){const src=map.getSource('ring');if(!src||!site)return;
     src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(site.lat,site.lon,b3km())}});
