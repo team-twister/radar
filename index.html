@@ -917,7 +917,7 @@ const D2=(()=>{
   function b3crop(force=true){
     if(!B3.on||!site)return;const sl=ov.children,n=sl.length;if(!n)return;
     const P=map.transform.pixelMatrix,Pi=inv4(P);if(!Pi)return;
-    const pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.12,dpr=window.devicePixelRatio||1;
+    const pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.025,dpr=window.devicePixelRatio||1;
     const W=map.transform.width,H=map.transform.height,pts=[[0,0],[W/2,0],[W,0],[0,H/2],[W,H/2],[0,H],[W/2,H],[W,H]];
     const wpx=(x,y,z)=>wOf(P,pb.x0+x*sx,pb.y0+y*sy,z);
     // where the screen point (x,y) looks at height z, in picture pixels (null if it looks above that height)
@@ -932,10 +932,17 @@ const D2=(()=>{
       if(sky){y0=Math.min(y0,0);y1=Math.max(y1,512);x0=Math.min(x0,0);x1=Math.max(x1,512)}   // looking toward the horizon: take the far part too
       const mx=(x1-x0)*0.1,my=(y1-y0)*0.1;x0-=mx;x1+=mx;y0-=my;y1+=my;
       // keep every corner safely in front of the camera
-      const wg=wpx(g[0],g[1],z);let s=1;
+      // (only the side nearest the camera is trimmed; before, the whole patch shrank, which cut away parts you could see)
+      const wg=wpx(g[0],g[1],z);
       if(wg<=eps*1.5){cuts.push(null);continue}
-      for(const[x,y]of[[x0,y0],[x1,y0],[x0,y1],[x1,y1]]){const w=wpx(x,y,z);if(w<eps)s=Math.min(s,(wg-eps)/(wg-w))}
-      const c={x0:Math.max(0,Math.floor(g[0]+s*(x0-g[0]))),x1:Math.min(512,Math.ceil(g[0]+s*(x1-g[0]))),y0:Math.max(18,Math.floor(g[1]+s*(y0-g[1]))),y1:Math.min(487,Math.ceil(g[1]+s*(y1-g[1])))};
+      x0=Math.max(0,x0);x1=Math.min(512,x1);y0=Math.max(18,y0);y1=Math.min(487,y1);
+      {const C=wpx(0,0,z),A=wpx(1,0,z)-C,B=wpx(0,1,z)-C;   // camera depth changes evenly across the slice: w = A*x + B*y + C
+        for(let it=0;it<3;it++){const xl=A>0?x0:x1,yl=B>0?y0:y1;if(A*xl+B*yl+C>=eps)break;
+          if(Math.abs(A)*(x1-x0)>=Math.abs(B)*(y1-y0)){const nx=(eps-B*yl-C)/A;if(A>0)x0=Math.max(x0,nx);else x1=Math.min(x1,nx)}
+          else{const ny=(eps-A*xl-C)/B;if(B>0)y0=Math.max(y0,ny);else y1=Math.min(y1,ny)}}}
+      const c={x0:Math.max(0,Math.floor(x0)),x1:Math.min(512,Math.ceil(x1)),y0:Math.max(18,Math.floor(y0)),y1:Math.min(487,Math.ceil(y1))};
+      // rounding outward could put a corner back too close: pull it in by one pixel if so
+      {const C=wpx(0,0,z),A=wpx(1,0,z)-C,B=wpx(0,1,z)-C,xl=A>0?c.x0:c.x1,yl=B>0?c.y0:c.y1;if(A*xl+B*yl+C<eps*0.8){if(A>0)c.x0++;else c.x1--;if(B>0)c.y0++;else c.y1--}}
       if(c.x1-c.x0<1||c.y1-c.y0<1){cuts.push(null);continue}
       big=Math.max(big,c.x1-c.x0,c.y1-c.y0);cuts.push(c)}
     // drawn at the picture's own resolution like the original 3D view (soft look), a bit sharper when zoomed right in.
@@ -959,9 +966,10 @@ const D2=(()=>{
   const ZS=10;   // metres of height per container pixel
   function b3place(){
     if(!B3.on||!crop||!site)return true;const sl=ov.children,n=sl.length;if(!n)return true;
-    const P=map.transform.pixelMatrix,pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.06,f=B3.f;let ok=true;
+    const P=map.transform.pixelMatrix,pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.06,danger=map.transform.cameraToCenterDistance*0.01,f=B3.f;let ok=true;
     for(let k=0;k<n;k++){const cr=crops[k];if(!cr)continue;const z=sliceZ(k,n),X0=pb.x0+cr.x*sx,Y0=pb.y0+cr.y*sy,X1=X0+cr.w*sx,Y1=Y0+cr.h*sy;
-      const bad=Math.min(wOf(P,X0,Y0,z),wOf(P,X1,Y0,z),wOf(P,X0,Y1,z),wOf(P,X1,Y1,z))<eps;if(bad)ok=false;
+      // only hide a slice if part of it is right at the camera (Safari can't draw that); if it's merely getting close, re-cut it
+      const wmin=Math.min(wOf(P,X0,Y0,z),wOf(P,X1,Y0,z),wOf(P,X0,Y1,z),wOf(P,X1,Y1,z)),bad=wmin<danger;if(wmin<eps)ok=false;
       const v=bad?'hidden':'';if(sl[k].style.visibility!==v)sl[k].style.visibility=v}
     const M=mul(P,[sx/f,0,0,0, 0,sy/f,0,0, 0,0,ZS,0, pb.x0,pb.y0,0,1]);
     // the map counts depth the opposite way to the browser (bigger = further away), which made the browser draw lower slices
@@ -973,10 +981,13 @@ const D2=(()=>{
   let lastCrop=0;
   /* Wide lens for the strong 3D look, but narrowed as you tilt toward the horizon: a wide lens tilted right over looks past
      the horizon into empty sky, which is why the top of the screen went black instead of showing satellite map. */
-  const lensFor=p=>Math.max(30,Math.min(60,2*(84-p)));
-  function b3lens(){const f=lensFor(map.getPitch());if(Math.abs(map.transform.fov-f)>0.3){map.transform.fov=f;map.triggerRepaint()}}
-  map.on('move',()=>{if(!B3.on)return;b3lens();
-    b3place()});   // only re-cut when the map stops moving (re-cutting while it moves made the phone run out of memory)
+  /* One fixed lens (changing it while tilting squashed the map). Tilt is limited a little so the view never looks up past
+     the horizon into empty sky. */
+  function b3lens(){if(Math.abs(map.transform.fov-50)>0.1){map.transform.fov=50;map.triggerRepaint()}if(map.getMaxPitch()!==64)map.setMaxPitch(64)}
+  let recutT=0;
+  map.on('move',()=>{if(!B3.on)return;
+    // slices that drift too close to the camera while you move get re-cut straight away (at most a few times a second)
+    if(!b3place()&&Date.now()-recutT>400){recutT=Date.now();b3crop(true)}});
   map.on('moveend',()=>{if(B3.on)b3crop(false)});
   map.on('resize',()=>{if(B3.on)b3crop()});
   function ring(){const src=map.getSource('ring');if(!src||!site)return;
@@ -1033,7 +1044,7 @@ const D2=(()=>{
       const go=()=>{if(!B3.on)return;clearBlocks();ring();b3home(1500)};if(map.loaded())go();else map.once('load',go);
       b3build();b3head();syncTime();await b3load(true);
     },
-    leave(){B3.on=false;ov.hidden=true;ov.innerHTML='';crop=null;map.transform.fov=36.87;map.setPadding({top:0,bottom:0,left:0,right:0});map.triggerRepaint();
+    leave(){B3.on=false;ov.hidden=true;ov.innerHTML='';crop=null;map.transform.fov=36.87;map.setMaxPitch(75);map.setPadding({top:0,bottom:0,left:0,right:0});map.triggerRepaint();
       const src=map.getSource('ring');if(src&&activeSite){src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(activeSite[2],activeSite[3],RANGE_KM)}});map.setLayoutProperty('ring','visibility','visible')}},
     site(lat,lon){const nn=nearest(lat,lon,sites);if(!nn)return;site=nn[0];
       if(o2.product==='v'&&!site.doppler)o2.product='z';b3build();ring();b3home(1200);b3head();b3load(true)},
