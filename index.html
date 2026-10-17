@@ -367,6 +367,8 @@ const SOURCES={
 /* ================= helpers ================= */
 const $=id=>document.getElementById(id);
 const store={get(k){try{return JSON.parse(localStorage.getItem('lrs2-'+k))}catch(e){return null}},set(k,v){try{localStorage.setItem('lrs2-'+k,JSON.stringify(v))}catch(e){}}};
+/* if 3D made Safari crash last time (it never got to say it was fine), open in 2D instead so the app is never stuck crashing */
+const B3CRASH=(()=>{const t=store.get('b3crash');return t&&Date.now()-t<30*60e3})();store.set('b3crash',0);
 const st={...DEFAULTS};for(const k of Object.keys(DEFAULTS)){if(k==='view'||k==='mode2')continue;   // always open on 3D, Latest
   const v=store.get(k);if(v!==null&&v!==undefined)st[k]=v}
 function status(msg,err){const s=$('status');if(!msg){s.hidden=true;return}s.hidden=false;s.textContent=msg;s.classList.toggle('err',!!err)}
@@ -613,6 +615,8 @@ function setMode(m){st.mode=m;store.set('mode2',m);document.body.classList.toggl
 function applyB3(){
   const want=b3on();document.body.classList.toggle('b3',want);
   if(!want)document.body.classList.remove('b3pick');
+  clearTimeout(window.b3okT);
+  if(want){store.set('b3crash',Date.now());window.b3okT=setTimeout(()=>store.set('b3crash',0),15000)}else store.set('b3crash',0);
   if(want){if(!D2.b3.active()){const s=activeSite||SITES.find(x=>x[0]===st.site)||SITES.find(x=>x[0]===DEFAULTS.site);D2.b3.enter(s?s[2]:-27.7,s?s[3]:153.2)}}
   else{if(D2.b3.active())D2.b3.leave();
     if(st.view==='3d'){if(activeSite)home(900);if(activeSite&&!frames.length)update(true);else{stamp();redraw()}}}
@@ -852,7 +856,7 @@ const D2=(()=>{
      to copy 15 (only the most extreme cores). So light rain stays low and strong cores stand tall, like RadarScope's 3D.
      Each copy is coloured by its own graphics filter (BoM pictures can't be read by the app, only drawn). Doppler wind stacks by
      wind speed instead (10 copies). Lower copies are drawn a bit darker so the sides of each tower show. */
-  const NZ=15,NV=10;
+  const NZ=8,NV=5;   // reflectivity: 8 slices (every second BoM band), Doppler wind: 5
   const B3={on:false,failed:false,F:[],cur:0,tag:'',S:0,P:800,spin:false,h:store.get('b3h1')??1,min:store.get('b3min')??0,
     };
   const ZLOW=[12,23,28,31,34,37,40,43,46,49,52,55,58,61,64];    // lower edge (dBZ) of each BoM band
@@ -865,7 +869,7 @@ const D2=(()=>{
       const m=`${w[0]} ${w[1]} ${w[2]} 0 ${w[3]}`,sv=pal.map(([r,g,b])=>(w[0]*r+w[1]*g+w[2]*b)/255+w[3]),tr=[],tg=[],tb=[],ta=[];
       for(let i=0;i<256;i++){const x=(i+.5)/256;let j=0;for(let q=1;q<sv.length;q++)if(Math.abs(sv[q]-x)<Math.abs(sv[j]-x))j=q;
         const lv=level(j),top=Math.min(lv,n-1),sh=k>=top?1:0.45+0.4*k/Math.max(1,top),c=colour(j);
-        tr.push((c[0]*sh/255).toFixed(3));tg.push((c[1]*sh/255).toFixed(3));tb.push((c[2]*sh/255).toFixed(3));ta.push(lv>=k&&lv>=min?1:0)}
+        tr.push((c[0]*sh/255).toFixed(3));tg.push((c[1]*sh/255).toFixed(3));tb.push((c[2]*sh/255).toFixed(3));ta.push(lv>=k&&j>=min?1:0)}
       return `<filter id="${id}" filterUnits="userSpaceOnUse" x="0" y="18" width="512" height="470" color-interpolation-filters="sRGB">`+
         `<feColorMatrix in="SourceGraphic" type="matrix" values="${m} ${m} ${m} 0 0 0 1 0" result="s"/>`+
         `<feComponentTransfer in="s" result="c"><feFuncR type="discrete" tableValues="${tr.join(' ')}"/><feFuncG type="discrete" tableValues="${tg.join(' ')}"/><feFuncB type="discrete" tableValues="${tb.join(' ')}"/></feComponentTransfer>`+
@@ -873,8 +877,8 @@ const D2=(()=>{
         `<feComponentTransfer in="a" result="k"><feFuncA type="discrete" tableValues="${ta.join(' ')}"/></feComponentTransfer>`+
         `<feComposite in="c" in2="k" operator="in"/></filter>`};
     let h='';
-    for(let k=0;k<NZ;k++)h+=mk('b3z'+k,W,BANDS,j=>j,j=>o2.rs?col(ZMID[j]):BANDS[j],NZ,k,B3.min);
-    for(let k=0;k<NV;k++)h+=mk('b3v'+k,[-0.25,0.375,-1,0.875],VPAL,j=>Math.abs(j-9),j=>o2.rs?vcol(j):VPAL[j],NV,k,0);
+    for(let k=0;k<NZ;k++)h+=mk('b3z'+k,W,BANDS,j=>Math.floor(j/2),j=>o2.rs?col(ZMID[j]):BANDS[j],NZ,k,B3.min);
+    for(let k=0;k<NV;k++)h+=mk('b3v'+k,[-0.25,0.375,-1,0.875],VPAL,j=>Math.floor(Math.abs(j-9)/2),j=>o2.rs?vcol(j):VPAL[j],NV,k,0);
     $('b3defs').innerHTML=h;
   }
   /* The slices sit on the real 3D map (the same map as before), so zooming, turning and tilting are the map's own and you can
@@ -900,7 +904,7 @@ const D2=(()=>{
   function b3crop(){
     if(!B3.on||!site)return;const sl=ov.children,n=sl.length;if(!n)return;
     const bb=map.getBounds(),km=b3km(),a=km/110.574,b=km/(111.32*Math.cos(site.lat*Math.PI/180));
-    const W0=site.lon-b,N0=site.lat+a,mx=(bb.getEast()-bb.getWest())*0.12,my=(bb.getNorth()-bb.getSouth())*0.12;
+    const W0=site.lon-b,N0=site.lat+a,mx=(bb.getEast()-bb.getWest())*0.03,my=(bb.getNorth()-bb.getSouth())*0.03;
     const R={x0:(bb.getWest()-mx-W0)/(2*b)*512,x1:(bb.getEast()+mx-W0)/(2*b)*512,y0:(N0-(bb.getNorth()+my))/(2*a)*512,y1:(N0-(bb.getSouth()-my))/(2*a)*512};
     const c=map.getCenter(),gx=(c.lng-W0)/(2*b)*512,gy=(N0-c.lat)/(2*a)*512;
     const P=map.transform.pixelMatrix,pb=picBox(),sx=(pb.x1-pb.x0)/512,sy=(pb.y1-pb.y0)/512,eps=map.transform.cameraToCenterDistance*0.12;
@@ -1025,7 +1029,7 @@ const D2=(()=>{
 /* ================= switching between 2D and 3D ================= */
 async function setView(v){
   stopPlay();st.view=v;store.set('view',v);document.body.classList.toggle('v2d',v==='2d');
-  if(v==='2d'){if(D2.b3.active())D2.b3.leave();document.body.classList.remove('b3','b3pick')}
+  if(v==='2d'){clearTimeout(window.b3okT);store.set('b3crash',0);if(D2.b3.active())D2.b3.leave();document.body.classList.remove('b3','b3pick')}
   $('v2d').setAttribute('aria-pressed',v==='2d');$('v3d').setAttribute('aria-pressed',v==='3d');
   if(v==='2d'){
     const c=map.getCenter();await D2.enter(c.lat,c.lng,Math.max(5,Math.min(10.5,map.getZoom()+1)),activeSite?activeSite[2]:undefined,activeSite?activeSite[3]:undefined);
@@ -1077,6 +1081,7 @@ $('sitesBtn').onclick=()=>{if(st.view==='2d'){$('sitesBtn').setAttribute('aria-p
   showSites(on)};
 const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style();0};
 
+if(B3CRASH){st.view='2d';setTimeout(()=>status('3D closed unexpectedly last time, so the app opened in 2D. Tap 3D to try it again.',true),6000)}
 st.mode='now';setMode('now');
 if(st.view==='2d')map.once('idle',()=>setView('2d'));
 function labelZoom(){$('map').classList.toggle('far',map.getZoom()<5.6)}
