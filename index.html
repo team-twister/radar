@@ -899,7 +899,7 @@ const D2=(()=>{
     return{x0:X(site.lon-b),x1:X(site.lon+b),y0:Y(site.lat+a),y1:Y(site.lat-a)}}
   // the camera's depth (w) of a world point: points behind or right next to the camera can't be drawn safely, so they're cut off
   const wOf=(P,X,Y,z)=>P[3]*X+P[7]*Y+P[11]*z+P[15];
-  const sliceZ=(k,n)=>0.07*B3.h*2*b3km()*1000*(k+1)/n+30;   // the map's camera is further away than the old 3D view's, so towers are drawn taller     // height of slice k in metres (same scale as before)
+  const sliceZ=(k,n)=>0.028*B3.h*2*b3km()*1000*(k+1)/n+30;   // same height scale as the original 3D view     // height of slice k in metres (same scale as before)
   let crops=[];
   function inv4(m){const a=m,o=new Float64Array(16);
     const b00=a[0]*a[5]-a[1]*a[4],b01=a[0]*a[6]-a[2]*a[4],b02=a[0]*a[7]-a[3]*a[4],b03=a[1]*a[6]-a[2]*a[5],b04=a[1]*a[7]-a[3]*a[5],b05=a[2]*a[7]-a[3]*a[6],
@@ -938,7 +938,7 @@ const D2=(()=>{
       const c={x0:Math.max(0,Math.floor(g[0]+s*(x0-g[0]))),x1:Math.min(512,Math.ceil(g[0]+s*(x1-g[0]))),y0:Math.max(18,Math.floor(g[1]+s*(y0-g[1]))),y1:Math.min(487,Math.ceil(g[1]+s*(y1-g[1])))};
       if(c.x1-c.x0<1||c.y1-c.y0<1){cuts.push(null);continue}
       big=Math.max(big,c.x1-c.x0,c.y1-c.y0);cuts.push(c)}
-    B3.f=Math.min(768/dpr/big,8);   // one sharpness for all slices so they share the camera placement; sharper blocks when zoomed in
+    B3.f=Math.max(1,256/big)/dpr;   // drawn at the picture's own resolution, like the original 3D view (soft, smooth look)   // one sharpness for all slices so they share the camera placement; sharper blocks when zoomed in
     for(let k=0;k<n;k++){const d=sl[k],c=cuts[k];let cr=null;
       if(c){const w=c.x1-c.x0,h=c.y1-c.y0;cr={x:c.x0,y:c.y0,w,h,ew:w*B3.f,eh:h*B3.f}}
       crops.push(cr);d.style.display=cr?'':'none';if(!cr)continue;
@@ -970,10 +970,11 @@ const D2=(()=>{
   function ring(){const src=map.getSource('ring');if(!src||!site)return;
     src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(site.lat,site.lon,b3km())}});
     map.setLayoutProperty('ring','visibility',o2.ring?'visible':'none')}
-  function b3home(dur=1200){if(!site)return;const km=b3km(),r=circle(site.lat,site.lon,km*0.95,24),lo=r.map(p=>p[0]),la=r.map(p=>p[1]);
-    const dockH=document.querySelector('.dock').getBoundingClientRect().height;
-    const cam=map.cameraForBounds([[Math.min(...lo),Math.min(...la)],[Math.max(...lo),Math.max(...la)]],{padding:{top:90,bottom:Math.min(dockH+10,innerHeight*0.55),left:10,right:10}});
-    if(cam)map.easeTo({...cam,pitch:55,bearing:-15,duration:dur})}
+  // like the original 3D view: the radar area fills the width of the screen, centred in the space between the header and the controls
+  function b3home(dur=1200){if(!site)return;const km=b3km();
+    const top=document.querySelector('header').getBoundingClientRect().bottom,bot=Math.min(document.querySelector('.dock').getBoundingClientRect().height,innerHeight*0.6);
+    const kmPerPx=2*km/(innerWidth*0.96),mPerPx=kmPerPx*1000,z=Math.log2(78271.52*Math.cos(site.lat*Math.PI/180)/mPerPx);
+    map.easeTo({center:[site.lon,site.lat],zoom:z,pitch:52,bearing:-15,padding:{top,bottom:bot,left:0,right:0},duration:dur})}
   function b3head(){
     if(!B3.on||!site)return;const v=o2.product==='v',f=B3.F[B3.cur];
     $('hName').textContent=site.name;
@@ -1016,10 +1017,11 @@ const D2=(()=>{
       B3.on=true;ov.hidden=false;await loadSites();
       const nn=nearest(lat,lon,sites);if(nn&&nn[0]!==site){site=nn[0];B3.tag=''}if(!site)site=sites[0];
       if(o2.product==='v'&&!site.doppler)o2.product='z';
+      map.transform.fov=60;map.triggerRepaint();
       const go=()=>{if(!B3.on)return;clearBlocks();ring();b3home(1500)};if(map.loaded())go();else map.once('load',go);
       b3build();b3head();syncTime();await b3load(true);
     },
-    leave(){B3.on=false;ov.hidden=true;ov.innerHTML='';crop=null;
+    leave(){B3.on=false;ov.hidden=true;ov.innerHTML='';crop=null;map.transform.fov=36.87;map.setPadding({top:0,bottom:0,left:0,right:0});map.triggerRepaint();
       const src=map.getSource('ring');if(src&&activeSite){src.setData({type:'Feature',geometry:{type:'LineString',coordinates:circle(activeSite[2],activeSite[3],RANGE_KM)}});map.setLayoutProperty('ring','visibility','visible')}},
     site(lat,lon){const nn=nearest(lat,lon,sites);if(!nn)return;site=nn[0];
       if(o2.product==='v'&&!site.doppler)o2.product='z';b3build();ring();b3home(1200);b3head();b3load(true)},
