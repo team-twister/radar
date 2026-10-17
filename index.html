@@ -966,7 +966,11 @@ const D2=(()=>{
     return ok;
   }
   let lastCrop=0;
-  map.on('move',()=>{if(!B3.on)return;
+  /* Wide lens for the strong 3D look, but narrowed as you tilt toward the horizon: a wide lens tilted right over looks past
+     the horizon into empty sky, which is why the top of the screen went black instead of showing satellite map. */
+  const lensFor=p=>Math.max(30,Math.min(60,2*(84-p)));
+  function b3lens(){const f=lensFor(map.getPitch());if(Math.abs(map.transform.fov-f)>0.3){map.transform.fov=f;map.triggerRepaint()}}
+  map.on('move',()=>{if(!B3.on)return;b3lens();
     b3place()});   // only re-cut when the map stops moving (re-cutting while it moves made the phone run out of memory)
   map.on('moveend',()=>{if(B3.on)b3crop()});
   map.on('resize',()=>{if(B3.on)b3crop()});
@@ -1020,7 +1024,7 @@ const D2=(()=>{
       B3.on=true;ov.hidden=false;await loadSites();
       const nn=nearest(lat,lon,sites);if(nn&&nn[0]!==site){site=nn[0];B3.tag=''}if(!site)site=sites[0];
       if(o2.product==='v'&&!site.doppler)o2.product='z';
-      map.transform.fov=60;map.triggerRepaint();
+      b3lens();
       const go=()=>{if(!B3.on)return;clearBlocks();ring();b3home(1500)};if(map.loaded())go();else map.once('load',go);
       b3build();b3head();syncTime();await b3load(true);
     },
