@@ -910,7 +910,7 @@ const D2=(()=>{
       if(wg>eps*1.5){let s=1;
         for(const[x,y]of[[R.x0,R.y0],[R.x1,R.y0],[R.x0,R.y1],[R.x1,R.y1]]){const w=wpx(x,y,z);if(w<eps)s=Math.min(s,(wg-eps)/(wg-w))}
         const x0=Math.max(0,Math.floor(gx+s*(R.x0-gx))),x1=Math.min(512,Math.ceil(gx+s*(R.x1-gx))),y0=Math.max(18,Math.floor(gy+s*(R.y0-gy))),y1=Math.min(487,Math.ceil(gy+s*(R.y1-gy)));
-        if(x1-x0>=1&&y1-y0>=1){const w=x1-x0,h=y1-y0,f=1024/dpr/Math.max(w,h);cr={x:x0,y:y0,w,h,ew:w*f,eh:h*f}}}
+        if(x1-x0>=1&&y1-y0>=1){const w=x1-x0,h=y1-y0,f=Math.min(512/dpr/Math.max(w,h),2);cr={x:x0,y:y0,w,h,ew:w*f,eh:h*f}}}
       crops.push(cr);d.style.display=cr?'':'none';if(!cr)continue;
       const svg=d.firstChild;svg.setAttribute('viewBox',`${cr.x} ${cr.y} ${cr.w} ${cr.h}`);svg.setAttribute('width',cr.ew);svg.setAttribute('height',cr.eh);d.style.width=cr.ew+'px';d.style.height=cr.eh+'px';
       const fl=document.getElementById(`b3${o2.product==='v'?'v':'z'}${k}`);if(fl){fl.setAttribute('x',cr.x-1);fl.setAttribute('y',cr.y-1);fl.setAttribute('width',cr.w+2);fl.setAttribute('height',cr.h+2)}}
@@ -930,8 +930,7 @@ const D2=(()=>{
   }
   let lastCrop=0;
   map.on('move',()=>{if(!B3.on)return;
-    const ok=b3place();
-    if((!ok||(crop&&Math.abs(map.getZoom()-crop.zoom)>0.6))&&Date.now()-lastCrop>150){lastCrop=Date.now();b3crop()}});
+    b3place()});   // only re-cut when the map stops moving (re-cutting while it moves made the phone run out of memory)
   map.on('moveend',()=>{if(B3.on)b3crop()});
   map.on('resize',()=>{if(B3.on)b3crop()});
   function ring(){const src=map.getSource('ring');if(!src||!site)return;
