@@ -289,7 +289,7 @@ body.b3 .dock-head .keep3{order:3;flex:1 0 100%}
 /* ================= settings ================= */
 const HALF=20037508.342789244, WORLD=HALF*2, R_EARTH=6378137;
 const RANGE_KM=256;
-const DEFAULTS={view:'3d',mode2:'now',gap:1,min:14,float:6,count:12,dark:false,smooth:true,site:'Brisbane (Mt Stapylton)'};
+const DEFAULTS={view:'2d',mode2:'now',gap:1,min:14,float:6,count:12,dark:false,smooth:true,site:'Brisbane (Mt Stapylton)'};
 const VX=4;                   // vertical exaggeration so layers read at map scale
 const GAP_UNIT=2500*VX;       // metres of height per "layer gap" step
 const MAX_H=14000*VX;         // tallest block in 3D stack / latest mode (metres)
@@ -369,7 +369,7 @@ const $=id=>document.getElementById(id);
 const store={get(k){try{return JSON.parse(localStorage.getItem('lrs2-'+k))}catch(e){return null}},set(k,v){try{localStorage.setItem('lrs2-'+k,JSON.stringify(v))}catch(e){}}};
 /* if 3D made Safari crash last time (it never got to say it was fine), open in 2D instead so the app is never stuck crashing */
 const B3CRASH=(()=>{const t=store.get('b3crash');return t&&Date.now()-t<30*60e3})();store.set('b3crash',0);
-const st={...DEFAULTS};for(const k of Object.keys(DEFAULTS)){if(k==='view'||k==='mode2')continue;   // always open on 3D, Latest
+const st={...DEFAULTS};for(const k of Object.keys(DEFAULTS)){if(k==='view'||k==='mode2')continue;   // always open on 2D
   const v=store.get(k);if(v!==null&&v!==undefined)st[k]=v}
 function status(msg,err){const s=$('status');if(!msg){s.hidden=true;return}s.hidden=false;s.textContent=msg;s.classList.toggle('err',!!err)}
 const lon2x=lon=>lon*Math.PI/180*R_EARTH, lat2y=lat=>R_EARTH*Math.log(Math.tan(Math.PI/4+lat*Math.PI/360));
@@ -521,7 +521,7 @@ function cellPoly(g,gx,gy){
 
 const b3on=()=>st.view==='3d'&&st.mode==='now'&&!D2.b3.failed();
 async function update(force){
-  if(b3on())return;
+  if(b3on()||st.view==='2d')return;   // the 3D map's own radar only loads when 3D is open
   if(busy){pendingForce=pendingForce||force;return}
   busy=true;const s=activeSite;
   try{
@@ -788,22 +788,46 @@ const D2=(()=>{
   }
   async function fallback2(){o2.src='rv';head();const ok=await loadRV();if(ok)status(FBMSG,true);return ok}
   const vBounds=(s,km=RKM)=>{const a=km/110.574,b=km/(111.32*Math.cos(s.lat*Math.PI/180));return[[s.lat-a,s.lon-b],[s.lat+a,s.lon+b]]};
-  async function findF(s,letter){
-    // BoM names each picture by its UTC minute; new ones arrive roughly every 4-6 minutes
-    const id=String(s.id).padStart(2,'0'),key=id+letter,now=Math.floor(Date.now()/6e4)*6e4,span=o2.frames*5+6,known=vCache.get(key)||new Map(),jobs=[];
-    for(let m=1;m<=span;m++){const t=now-m*6e4;if(known.has(t)||(known.missing&&known.missing.has(t)&&now-t>20*6e4))continue;
-      const url=`${BOM}/radar/IDR${id}${letter}.T.${bomStamp(new Date(t))}.png`;
-      jobs.push(look(url,7000).then(ok=>{if(ok)known.set(t,url);else(known.missing=known.missing||new Set()).add(t)}))}
-    await Promise.all(jobs);vCache.set(key,known);
-    return[...known.entries()].filter(([t])=>now-t<=span*6e4).sort((a,b)=>a[0]-b[0]).slice(-o2.frames);
+  /* Finding BoM's pictures. BoM names each one by its UTC minute and doesn't list them, so the app asks for each minute.
+     Fixes (the loop sometimes said "down" when BoM was fine):
+     - it used to fire up to ~70 requests at once; the phone only runs ~6 at a time, so the rest waited and timed out and were
+       wrongly counted as "no picture", and older ones were never asked for again. Now 6 at a time, newest first, and a
+       timeout is retried next time instead of being written off.
+     - minutes right next to a picture it already has are skipped (BoM makes one every 4-6 minutes), so far fewer requests.
+     - two refreshes asking at the same time now share one search. */
+  function ask(url,timeout=8000){return new Promise(res=>{const im=new Image();im.referrerPolicy='no-referrer';const t=setTimeout(()=>{im.src='';res('slow')},timeout);
+    im.onload=()=>{clearTimeout(t);res('ok')};im.onerror=()=>{clearTimeout(t);res('none')};im.src=url})}
+  const finding=new Map();
+  function findF(s,letter){const id=String(s.id).padStart(2,'0'),key=id+letter+'|'+o2.frames;
+    if(finding.has(key))return finding.get(key);
+    const p=findF2(s,letter).finally(()=>finding.delete(key));finding.set(key,p);return p}
+  async function findF2(s,letter){
+    const id=String(s.id).padStart(2,'0'),key=id+letter,now=Math.floor(Date.now()/6e4)*6e4,span=o2.frames*5+6,known=vCache.get(key)||new Map();
+    known.missing=known.missing||new Set();
+    const near=t=>{for(const k of known.keys())if(Math.abs(k-t)<=2*6e4)return true;return false};
+    const todo=[];
+    for(let m=1;m<=span;m++){const t=now-m*6e4;if(known.has(t)||near(t))continue;
+      if(known.missing.has(t)&&now-t>20*6e4)continue;   // BoM sometimes posts a picture a few minutes late, so recent misses are re-checked
+      todo.push(t)}
+    let slow=0,got=0,i=0;
+    const worker=async()=>{while(i<todo.length){if(slow>=6&&!got)break;   // BoM not answering at all: stop and say so instead of waiting
+      const t=todo[i++];if(near(t))continue;
+      const url=`${BOM}/radar/IDR${id}${letter}.T.${bomStamp(new Date(t))}.png`,r=await ask(url);
+      if(r==='ok'){got++;known.set(t,url);known.missing.delete(t)}else if(r==='none')known.missing.add(t);else slow++}};
+    await Promise.all(Array.from({length:6},worker));
+    vCache.set(key,known);
+    const list=[...known.entries()].filter(([t])=>now-t<=span*6e4).sort((a,b)=>a[0]-b[0]).slice(-o2.frames);
+    list.slow=slow;return list;
   }
+  const downMsg=(what,letter,list)=>list&&list.slow?`BoM is slow to answer right now, so ${what} couldn't load. It will keep trying by itself, or tap Refresh now.`
+    :`BoM hasn't published ${what} for ${site.name} in the last ${o2.frames*5} min, so the radar may be down. Compare with bom.gov.au/products/IDR${String(site.id).padStart(2,'0')}${letter}.loop.shtml`;
   // load a set of per-radar pictures into arr (keeps frames it already has)
   async function loadPics(arr,letter,km,what){
     const tag=site?`${site.id}${letter}`:'';
     if(arr.tag!==tag){for(const f of arr)map2.removeLayer(f.layer);arr.length=0;arr.tag=tag}
     if(!arr.length)status(`Finding ${site.name} ${what}…`);
     const list=await findF(site,letter);
-    if(!list.length){status(`BoM hasn't published ${what} for ${site.name} in the last ${o2.frames*5} min, so the radar may be down. Compare with bom.gov.au/products/IDR${String(site.id).padStart(2,'0')}${letter}.loop.shtml`,true);return false}
+    if(!list.length){status(downMsg(what,letter,list),true);if(list.slow)setTimeout(()=>{if(st.view==='2d')refresh(false)},30e3);return false}
     const b=vBounds(site,km),have=new Map(arr.map(f=>[f.t,f])),wantT=new Set(list.map(([t])=>t));
     for(const f of arr)if(!wantT.has(f.t))map2.removeLayer(f.layer);
     const kind=letter==='I'?'v':'z';
@@ -1020,7 +1044,8 @@ const D2=(()=>{
     const atEnd=B3.cur>=B3.F.length-1,list=await findF(site,letter);
     if(B3.tag!==tag||!B3.on)return false;
     if(!list.length){
-      if(await bomAlive()){B3.F=[];b3show(0);status(`BoM hasn't published ${what} for ${site.name} in the last ${o2.frames*5} min, so the radar may be down. Compare with bom.gov.au/products/IDR${String(site.id).padStart(2,'0')}${letter}.loop.shtml`,true);return false}
+      if(list.slow){status(downMsg(what,letter,list),true);setTimeout(()=>{if(B3.on)b3load(false)},30e3);return false}   // keep what's showing and try again soon
+      if(await bomAlive()){B3.F=[];b3show(0);status(downMsg(what,letter,list),true);return false}
       B3.failed=true;status(FBMSG,true);if(window.applyB3)window.applyB3();return false}
     B3.F=list.map(([t,url])=>({t,url}));B3.F.forEach(f=>preload(f.url));
     status(null);b3show(full||atEnd?B3.F.length-1:B3.cur);return true;
@@ -1087,7 +1112,7 @@ async function setView(v){
   if(v==='2d'){clearTimeout(window.b3okT);store.set('b3crash',0);if(D2.b3.active())D2.b3.leave();document.body.classList.remove('b3','b3pick')}
   $('v2d').setAttribute('aria-pressed',v==='2d');$('v3d').setAttribute('aria-pressed',v==='3d');
   if(v==='2d'){
-    const c=map.getCenter();await D2.enter(c.lat,c.lng,Math.max(5,Math.min(10.5,map.getZoom()+1)),activeSite?activeSite[2]:undefined,activeSite?activeSite[3]:undefined);
+    const c=map.getCenter(),sv=activeSite||SITES.find(x=>x[0]===st.site)||SITES.find(x=>x[0]===DEFAULTS.site);await D2.enter(c.lat,c.lng,Math.max(5,Math.min(10.5,map.getZoom()+1)),sv?sv[2]:undefined,sv?sv[3]:undefined);
     $('sitesBtn').setAttribute('aria-pressed',false);
   }else{
     const p=D2.leave();
@@ -1136,9 +1161,9 @@ $('sitesBtn').onclick=()=>{if(st.view==='2d'){$('sitesBtn').setAttribute('aria-p
   showSites(on)};
 const _applyStyle=applyStyle;applyStyle=function(){_applyStyle();D2.style();0};
 
-if(B3CRASH){st.view='2d';setTimeout(()=>status('3D closed unexpectedly last time, so the app opened in 2D. Tap 3D to try it again.',true),6000)}
+
 st.mode='now';setMode('now');
-if(st.view==='2d')map.once('idle',()=>setView('2d'));
+if(st.view==='2d')setView('2d');
 function labelZoom(){$('map').classList.toggle('far',map.getZoom()<5.6)}
 map.on('zoomend',labelZoom);map.on('load',labelZoom);
 for(let z=15;z<70;z++){const i=document.createElement('i');i.style.background=hex(z);$('scale').appendChild(i)}
