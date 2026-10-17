@@ -899,7 +899,7 @@ const D2=(()=>{
     return{x0:X(site.lon-b),x1:X(site.lon+b),y0:Y(site.lat+a),y1:Y(site.lat-a)}}
   // the camera's depth (w) of a world point: points behind or right next to the camera can't be drawn safely, so they're cut off
   const wOf=(P,X,Y,z)=>P[3]*X+P[7]*Y+P[11]*z+P[15];
-  const sliceZ=(k,n)=>0.028*B3.h*2*b3km()*1000*(k+1)/n+30;   // same height scale as the original 3D view     // height of slice k in metres (same scale as before)
+  const sliceZ=(k,n)=>0.014*B3.h*2*b3km()*1000*k/Math.max(1,n-1)+20;   // bottom slice sits on the ground; half the old height so it reads as solid 3D     // height of slice k in metres (same scale as before)
   let crops=[];
   function inv4(m){const a=m,o=new Float64Array(16);
     const b00=a[0]*a[5]-a[1]*a[4],b01=a[0]*a[6]-a[2]*a[4],b02=a[0]*a[7]-a[3]*a[4],b03=a[1]*a[6]-a[2]*a[5],b04=a[1]*a[7]-a[3]*a[5],b05=a[2]*a[7]-a[3]*a[6],
@@ -959,6 +959,9 @@ const D2=(()=>{
       const bad=Math.min(wOf(P,X0,Y0,z),wOf(P,X1,Y0,z),wOf(P,X0,Y1,z),wOf(P,X1,Y1,z))<eps;if(bad)ok=false;
       const v=bad?'hidden':'';if(sl[k].style.visibility!==v)sl[k].style.visibility=v}
     const M=mul(P,[sx/f,0,0,0, 0,sy/f,0,0, 0,0,ZS,0, pb.x0,pb.y0,0,1]);
+    // the map counts depth the opposite way to the browser (bigger = further away), which made the browser draw lower slices
+    // on top of higher ones. Flip it so nearer slices are drawn in front. (This doesn't move anything on screen.)
+    M[2]=-M[2];M[6]=-M[6];M[10]=-M[10];M[14]=-M[14];
     ov.style.transform=`matrix3d(${Array.from(M,v=>+v.toPrecision(9)).join(',')})`;
     return ok;
   }
